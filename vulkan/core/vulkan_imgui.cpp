@@ -101,9 +101,9 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
 	VkShaderModule vertexShader = vktools::createShaderModule(devices->device,
-		vktools::readFile("../../core/shaders/imgui_vert.spv"));
+		vktools::readFile("../core/shaders/imgui_vert.spv"));
 	VkShaderModule fragmentShader = vktools::createShaderModule(devices->device,
-		vktools::readFile("../../core/shaders/imgui_frag.spv"));
+		vktools::readFile("../core/shaders/imgui_frag.spv"));
 	shaderStages[0] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShader);
 	shaderStages[1] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader);
 
@@ -123,6 +123,10 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 
 	vkDestroyShaderModule(devices->device, vertexShader, nullptr);
 	vkDestroyShaderModule(devices->device, fragmentShader, nullptr);
+
+	//build first frame
+	newFrame();
+	updateBuffers();
 }
 
 /*
@@ -131,12 +135,9 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 void Imgui::cleanup() {
 	ImGui::DestroyContext();
 	//vertex & index buffer
-	devices->memoryAllocator.freeBufferMemory(vertexBuffer, 
+	devices->memoryAllocator.freeBufferMemory(vertexIndexBuffer, 
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	vkDestroyBuffer(devices->device, vertexBuffer, nullptr);
-	devices->memoryAllocator.freeBufferMemory(indexBuffer,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	vkDestroyBuffer(devices->device, indexBuffer, nullptr);
+	vkDestroyBuffer(devices->device, vertexIndexBuffer, nullptr);
 	//image
 	fontImage.cleanup();
 	//pipeline
@@ -158,50 +159,55 @@ void Imgui::newFrame() {
 
 /*
 * update vertex & index buffer
+* 
+* @return bool - buffer recreated?
 */
-void Imgui::updateBuffers() {
+bool Imgui::updateBuffers() {
+	bool bufferRecreated= false;
 	ImDrawData* imDrawData = ImGui::GetDrawData();
 
 	VkDeviceSize vertexBufferSize = imDrawData->TotalVtxCount * sizeof(ImDrawVert);
 	VkDeviceSize indexBufferSize = imDrawData->TotalIdxCount* sizeof(ImDrawIdx);
 
 	if (vertexBufferSize == 0 || indexBufferSize == 0) {
-		return;
+		return bufferRecreated;
 	}
+
+	//finish all command before deleting the buffer
+	vkDeviceWaitIdle(devices->device);
 
 	//update buffers only if vertex or index count has been changed
-	//vertex buffer
-	if (vertexBuffer == VK_NULL_HANDLE || vertexCount != imDrawData->TotalVtxCount) {
-		devices->memoryAllocator.freeBufferMemory(vertexBuffer,
+	if (vertexIndexBuffer == VK_NULL_HANDLE || vertexCount != imDrawData->TotalVtxCount 
+		|| indexCount != imDrawData->TotalIdxCount) {
+		devices->memoryAllocator.freeBufferMemory(vertexIndexBuffer,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		vkDestroyBuffer(devices->device, vertexBuffer, nullptr);
-		vertexMem = devices->createBuffer(vertexBuffer, vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		vkDestroyBuffer(devices->device, vertexIndexBuffer, nullptr);
+		vertexIndexMem = devices->createBuffer(vertexIndexBuffer, vertexBufferSize,
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vertexCount = imDrawData->TotalVtxCount;
-	}
-	//index buffer
-	if (indexBuffer == VK_NULL_HANDLE || indexCount != imDrawData->TotalIdxCount) {
-		devices->memoryAllocator.freeBufferMemory(indexBuffer,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		vkDestroyBuffer(devices->device, indexBuffer, nullptr);
-		indexMem = devices->createBuffer(indexBuffer, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		indexCount = imDrawData->TotalIdxCount;
+		bufferRecreated = true;
 	}
 
-	ImDrawVert* vtxDst = (ImDrawVert*)vertexMem.getHandle(devices->device);
-	ImDrawIdx* idxDst = (ImDrawIdx*)indexMem.getHandle(devices->device);
-
+	//memcpy vertex data
+	ImDrawVert* vtxDst = (ImDrawVert*)vertexIndexMem.getHandle(devices->device);
 	for (int n = 0; n < imDrawData->CmdListsCount; ++n) {
 		const ImDrawList* cmd_list = imDrawData->CmdLists[n];
 		memcpy(vtxDst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
-		memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx)); 
 		vtxDst += cmd_list->VtxBuffer.Size;
-		idxDst += cmd_list->IdxBuffer.Size;
 	}
 
-	vertexMem.unmap(devices->device);
-	indexMem.unmap(devices->device);
+	//memcpy index data
+	ImDrawIdx* idxDst = (ImDrawIdx*)vtxDst;
+	for (int n = 0; n < imDrawData->CmdListsCount; ++n) {
+		const ImDrawList* cmd_list = imDrawData->CmdLists[n];
+		memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+		idxDst += cmd_list->IdxBuffer.Size;
+	}
+	
+	vertexIndexMem.unmap(devices->device);
+	return bufferRecreated;
 }
 
 /*
@@ -230,8 +236,9 @@ void Imgui::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
 
 	if (imDrawData->CmdListsCount > 0) {
 		VkDeviceSize offsets[1] = { 0 };
-		vkCmdBindVertexBuffers(cmdBuf, 0, 1, &vertexBuffer, offsets);
-		vkCmdBindIndexBuffer(cmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindVertexBuffers(cmdBuf, 0, 1, &vertexIndexBuffer, offsets);
+		VkDeviceSize vertexBufferSize = imDrawData->TotalVtxCount * sizeof(ImDrawVert);
+		vkCmdBindIndexBuffer(cmdBuf, vertexIndexBuffer, vertexBufferSize, VK_INDEX_TYPE_UINT16);
 
 		for (int32_t i = 0; i < imDrawData->CmdListsCount; ++i) {
 			const ImDrawList* cmd_list = imDrawData->CmdLists[i];

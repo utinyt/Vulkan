@@ -26,6 +26,7 @@ public:
 	* destructor - destroy vulkan objects created in this level
 	*/
 	~VulkanApp() {
+		imgui.cleanup();
 		vkDestroyDescriptorPool(devices.device, descriptorPool, nullptr);
 
 		for (size_t i = 0; i < uniformBuffers.size(); ++i) {
@@ -79,6 +80,8 @@ public:
 		createUniformBuffers();
 		//update descriptor set
 		updateDescriptorSets();
+		//imgui
+		imgui.init(&devices, swapchain.extent.width, swapchain.extent.height, renderPass, MAX_FRAMES_IN_FLIGHT);
 		//record command buffer
 		recordCommandBuffer();
 	}
@@ -317,7 +320,8 @@ private:
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
 			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
-			//vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+			
+			imgui.drawFrame(commandBuffers[i], descriptorSetIndex);
 
 			vkCmdEndRenderPass(commandBuffers[i]);
 			VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffers[i]));

@@ -1,4 +1,5 @@
 #include <fstream>
+#include <imgui/imgui.h>
 #include "vulkan_app_base.h"
 #include "vulkan_debug.h"
 
@@ -64,11 +65,12 @@ void VulkanAppBase::init() {
 }
 
 /*
-* called every frame - may contain update & draw functions
+* called every frame - contain update & draw functions
 */
 void VulkanAppBase::run() {
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
+		update();
 		draw();
 	}
 	vkDeviceWaitIdle(devices.device);
@@ -129,6 +131,29 @@ void VulkanAppBase::initApp() {
 }
 
 /*
+* called every frame - update application
+*/
+void VulkanAppBase::update() {
+	//mouse info update
+	glfwGetCursorPos(window, &xpos, &ypos);
+	leftPressed		= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+	rightPressed	= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+
+	//imgui mouse info update
+	ImGuiIO& io = ImGui::GetIO();
+	io.MousePos = ImVec2(static_cast<float>(xpos), static_cast<float>(ypos));
+	io.MouseDown[0] = leftPressed;
+	io.MouseDown[1] = rightPressed;
+
+	imgui.newFrame();
+	//imgui buffer updated || (mouse hovering imgui window && clicked)
+	if (imgui.updateBuffers() || (ImGui::IsMouseDown(ImGuiMouseButton(0)) && io.WantCaptureKeyboard)) {
+		resetCommandBuffer();
+		recordCommandBuffer();
+	}
+}
+
+/*
 * image acquisition & check swapchain compatible
 */
 uint32_t VulkanAppBase::prepareFrame() {
@@ -175,6 +200,7 @@ void VulkanAppBase::submitFrame(uint32_t imageIndex) {
 * handle window resize event - recreate swapchain and swaochain-dependent objects
 */
 void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
+	//update window size
 	int width = 0, height = 0;
 	glfwGetFramebufferSize(window, &width, &height);
 	while (width == 0 || height == 0) {
@@ -182,14 +208,25 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 		glfwWaitEvents();
 	}
 
+	//finish all command before destroy vk resources
 	vkDeviceWaitIdle(devices.device);
 
+	//swapchain
 	swapchain.create();
 
+	//depth stencil image
 	destroyDepthStencilImage();
 	createDepthStencilImage();
+
+	//framebuffer
 	createFramebuffers();
 
+	//imgui displat size update
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+	imgui.updateBuffers();
+
+	//command buffers
 	destroyCommandBuffers();
 	createCommandBuffers();
 	if (recordCmdBuf) {
@@ -207,6 +244,14 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 void VulkanAppBase::windowResizeCallbck(GLFWwindow* window, int width, int height) {
 	auto app = reinterpret_cast<VulkanAppBase*>(glfwGetWindowUserPointer(window));
 	app->windowResized = true;
+}
+
+/*
+* destroy & recreate command buffer
+*/
+void VulkanAppBase::resetCommandBuffer() {
+	destroyCommandBuffers();
+	createCommandBuffers();
 }
 
 /*

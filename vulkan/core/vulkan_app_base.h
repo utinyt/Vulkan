@@ -2,6 +2,7 @@
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
 #include "GLFW/glfw3.h"
+#include "vulkan_imgui.h"
 
 class VulkanAppBase {
 public:
@@ -14,12 +15,14 @@ public:
 protected:
 	virtual void initApp();
 	virtual void draw() = 0;
+	void update();
 
 	uint32_t prepareFrame();
 	void submitFrame(uint32_t imageIndex);
 	
 	virtual void resizeWindow(bool recordCommandBuffer = true);
 	static void windowResizeCallbck(GLFWwindow* window, int width, int height);
+	void resetCommandBuffer();
 	virtual void createFramebuffers() = 0;
 	virtual void recordCommandBuffer() = 0;
 
@@ -27,6 +30,12 @@ protected:
 	GLFWwindow* window;
 	/** window extent */
 	int width, height;
+	/** glfw mouse pos */
+	double xpos = 0, ypos = 0;
+	/** glfw mouse pressed */
+	bool leftPressed = false, rightPressed = false;
+	/** imgui vulkan integration */
+	Imgui imgui;
 	/** application title */
 	std::string appName;
 	/** list of enalbed (required) instance extensions */
