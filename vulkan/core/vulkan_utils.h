@@ -54,10 +54,6 @@ namespace vktools {
 		VkImageTiling tiling, VkFormatFeatureFlags features);
 	/** @brief check if the format has stencil component */
 	bool hasStencilComponent(VkFormat format);
-	/** @brief get buffer address */
-	VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer);
-	/** @brief convert glm mat4 to VkTransformMatrixKHR */
-	VkTransformMatrixKHR toTransformMatrixKHR(const glm::mat4& mat);
 	/** @brief create renderpass */
 	VkRenderPass createRenderPass(VkDevice device,
 		const std::vector<VkFormat>& colorAttachmentFormats,

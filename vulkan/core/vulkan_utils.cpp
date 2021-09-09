@@ -172,35 +172,6 @@ namespace vktools {
 	}
 
 	/*
-	* get buffer address
-	* 
-	* @param device - logical device handle
-	* @param buffer - buffer handle
-	* 
-	* @return VkDeviceAddress - buffer address
-	*/
-	VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer) {
-		VkBufferDeviceAddressInfo bufferInfo{};
-		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		bufferInfo.buffer = buffer;
-		return vkGetBufferDeviceAddress(device, &bufferInfo);
-	}
-
-	/*
-	* convert glm mat4 to VkTransformMatrixKHR
-	* 
-	* @param mat - glm matrix to convert
-	* 
-	* @return VkTransformMatrixKHR - converted vk matrix
-	*/
-	VkTransformMatrixKHR toTransformMatrixKHR(const glm::mat4& mat) {//column major
-		glm::mat4 transposed = glm::transpose(mat);
-		VkTransformMatrixKHR vkMat; //row major
-		memcpy(&vkMat, &transposed, sizeof(VkTransformMatrixKHR));
-		return vkMat;
-	}
-
-	/*
 	* create render pass
 	* 
 	* @param device - logical device handle
