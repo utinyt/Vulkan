@@ -108,41 +108,7 @@ void VulkanDevice::createLogicalDevice() {
 	}
 	deviceInfo.pNext = &deviceFeatures;
 
-	//add device features
-	VkPhysicalDeviceVulkan12Features device12Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-	VkPhysicalDeviceAccelerationStructureFeaturesKHR deviceAsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
 	VkMemoryAllocateFlags memflags = 0;
-
-	//add buffer device address feature
-	if (std::find(requiredExtensions.begin(), requiredExtensions.end(),
-		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) != requiredExtensions.end()) {
-		if (vk12Features.bufferDeviceAddress == VK_TRUE && asFeatures.accelerationStructure == VK_TRUE) {
-			device12Features.bufferDeviceAddress = VK_TRUE;
-			deviceAsFeatures.accelerationStructure = VK_TRUE;
-			deviceFeatures.pNext = &device12Features;
-			device12Features.pNext = &deviceAsFeatures;
-			memflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-		}
-	}
-
-	//add rat tracing pipeline feature
-	VkPhysicalDeviceRayTracingPipelineFeaturesKHR deviceRtFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
-	if (std::find(requiredExtensions.begin(), requiredExtensions.end(),
-		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) != requiredExtensions.end()) {
-		if (rtFeatures.rayTracingPipeline == VK_TRUE) {
-			deviceRtFeatures.rayTracingPipeline = VK_TRUE;
-			if (device12Features.pNext == &deviceAsFeatures) {
-				deviceAsFeatures.pNext = &deviceRtFeatures;
-			}
-			else {
-				deviceFeatures.pNext = &rtFeatures;
-			}
-
-			if (availableFeatures.features.shaderInt64 == VK_TRUE) {
-				deviceFeatures.features.shaderInt64 = VK_TRUE;
-			}
-		}
-	}
 
 	//deviceInfo.pEnabledFeatures = &deviceFeatures;
 	deviceInfo.enabledExtensionCount = static_cast<uint32_t>(requiredExtensions.size());
