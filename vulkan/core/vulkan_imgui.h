@@ -42,4 +42,9 @@ public:
 	bool updateBuffers();
 	/** @brief record imgui draw commands */
 	void drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame);
+
+	/* user input collection */
+	struct UserInput {
+		bool modelRotate = true;
+	} userInput;
 };

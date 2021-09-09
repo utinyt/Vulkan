@@ -119,7 +119,10 @@ private:
 	virtual void draw() override {
 		uint32_t imageIndex = prepareFrame();
 
-		updateUniformBuffer(currentFrame);
+		//imgui demo
+		if (imgui.userInput.modelRotate) {
+			updateUniformBuffer(currentFrame);
+		}
 
 		//render
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
