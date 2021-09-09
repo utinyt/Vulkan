@@ -54,7 +54,7 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = 
 		vktools::initializers::pipelineLayoutCreateInfo(1, &descriptorSetLayout);
 	
-	VkPushConstantRange pushConstantRange{ VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0 };
+	VkPushConstantRange pushConstantRange{ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) };
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -185,7 +185,7 @@ bool Imgui::updateBuffers() {
 		devices->memoryAllocator.freeBufferMemory(vertexIndexBuffer,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vkDestroyBuffer(devices->device, vertexIndexBuffer, nullptr);
-		vertexIndexMem = devices->createBuffer(vertexIndexBuffer, vertexBufferSize,
+		vertexIndexMem = devices->createBuffer(vertexIndexBuffer, vertexBufferSize + indexBufferSize,
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vertexCount = imDrawData->TotalVtxCount;
