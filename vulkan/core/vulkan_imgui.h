@@ -2,7 +2,7 @@
 #include "vulkan_texture.h"
 #include "vulkan_descriptor_set_bindings.h"
 
-/*
+/* 
 * Imgui & vulkan integration
 */
 class Imgui {
