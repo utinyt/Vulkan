@@ -160,6 +160,7 @@ void Mesh::Buffer::push(const void* data, size_t dataSize) {
 void Mesh::Buffer::cleanup() {
 	free(buffer);
 	buffer = nullptr;
+	currentOffset = 0;
 }
 
 /*

@@ -50,7 +50,7 @@ namespace vktools {
 	* @param aspect
 	*/
 	void setImageLayout(VkCommandBuffer commandBuffer, VkImage image,
-		VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspect) {
+		VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange subresourceRange) {
 		VkImageMemoryBarrier imageBarrier{};
 		imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		imageBarrier.oldLayout = oldLayout;
@@ -58,11 +58,7 @@ namespace vktools {
 		imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		imageBarrier.image = image;
-		imageBarrier.subresourceRange.aspectMask = aspect;
-		imageBarrier.subresourceRange.baseMipLevel = 0;
-		imageBarrier.subresourceRange.levelCount = 1;
-		imageBarrier.subresourceRange.baseArrayLayer = 0;
-		imageBarrier.subresourceRange.layerCount = 1;
+		imageBarrier.subresourceRange = subresourceRange;
 
 		VkPipelineStageFlags srcStage;
 		VkPipelineStageFlags dstStage;
@@ -117,17 +113,8 @@ namespace vktools {
 	*/
 	VkImageView createImageView(VkDevice device, VkImage image, VkImageViewType viewType,
 		VkFormat format, VkImageAspectFlags aspectFlags) {
-		VkImageViewCreateInfo viewInfo{};
-		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image = image;
-		viewInfo.viewType = viewType;
-		viewInfo.format = format;
-		viewInfo.subresourceRange.aspectMask = aspectFlags;
-		viewInfo.subresourceRange.baseMipLevel = 0;
-		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.baseArrayLayer = 0;
-		viewInfo.subresourceRange.layerCount = 1;
-
+		VkImageViewCreateInfo viewInfo = initializers::imageViewCreateInfo(image,
+			viewType, format, { aspectFlags, 0, 1, 0, 1 });
 		VkImageView imageView;
 		VK_CHECK_RESULT(vkCreateImageView(device, &viewInfo, nullptr, &imageView));
 		return imageView;

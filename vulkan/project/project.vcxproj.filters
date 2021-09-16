@@ -29,5 +29,11 @@
     <None Include="shaders\phong.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\skybox.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
