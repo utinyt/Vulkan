@@ -15,6 +15,7 @@ public:
 	struct UBO {
 		glm::mat4 model;
 		glm::mat4 view;
+		glm::mat4 normalMatrix;
 		glm::mat4 proj;
 	};
 
@@ -186,10 +187,10 @@ private:
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_vert.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
@@ -388,6 +389,7 @@ private:
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
 		glm::vec3 camPos = glm::vec3(4 * std::cos(time), 0, 4 * std::sin(time));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;
