@@ -135,7 +135,7 @@ void TextureCube::load(VulkanDevice* devices, const std::string& path){
 		pixelData[i] = data;
 	}
 
-	VkDeviceSize imageSize = width * height * channels * 6;
+	VkDeviceSize imageSize = width * height * 4 * 6;
 	VkDeviceSize layerSize = imageSize / 6;
 
 	//image create info
@@ -190,30 +190,16 @@ void TextureCube::load(VulkanDevice* devices, const std::string& path){
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		subresourceRange);
 
-	std::vector<VkBufferImageCopy> copies; 
-	/*= vktools::initializers::bufferCopyRegion(
+	VkBufferImageCopy copy = vktools::initializers::bufferCopyRegion(
 		{ static_cast<VkDeviceSize>(width), static_cast<VkDeviceSize>(height), 1 });
-	copy.imageSubresource.layerCount = 6;*/
-
-	for (int i = 0; i < 6; ++i) {
-		VkBufferImageCopy copy{};
-		copy.bufferOffset = layerSize * i;
-		copy.imageExtent = { static_cast<VkDeviceSize>(width), static_cast<VkDeviceSize>(height), 1 };
-		copy.imageSubresource.baseArrayLayer = i;
-		copy.imageSubresource.layerCount = 1;
-		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy.bufferRowLength = copy.imageExtent.width;
-		copy.bufferImageHeight = copy.imageExtent.height;
-		copies.push_back(copy);
-	}
-
+	copy.imageSubresource.layerCount = 6;
 
 	vkCmdCopyBufferToImage(cmdBuf,
 		stagingBuffer,
 		image,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		static_cast<uint32_t>(copies.size()),
-		copies.data());
+		1,
+		&copy);
 
 	descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 

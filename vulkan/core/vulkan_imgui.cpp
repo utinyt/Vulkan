@@ -109,7 +109,6 @@ void Imgui::cleanup() {
 void Imgui::newFrame() {
 	ImGui::NewFrame();
 	ImGui::Begin("Setting");
-	ImGui::Checkbox("Rotate", &userInput.modelRotate);
 	ImGui::End();
 	ImGui::Render();
 }

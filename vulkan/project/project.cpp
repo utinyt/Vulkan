@@ -205,7 +205,7 @@ private:
 		attributeDescription = skybox.getAttributeDescriptions();
 
 		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
 		gen.addVertexInputBindingDescription({ bindingDescription });
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addShader(
@@ -383,10 +383,11 @@ private:
 		static auto startTime = std::chrono::high_resolution_clock::now();
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
+		
 		UBO ubo{};
-		ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 1.f, 0.f));
-		ubo.view = glm::lookAt(glm::vec3(0.f, 0.f, 4.f), glm::vec3(0.f, 0.5f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
+		glm::vec3 camPos = glm::vec3(4 * std::cos(time), 0, 4 * std::sin(time));
+		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;

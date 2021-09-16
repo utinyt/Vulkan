@@ -12,7 +12,8 @@ layout(location = 0) out vec3 outUVW;
 
 void main(){
 	outUVW = inPos;
-	outUVW.xy *= -1.0;
-	vec4 pos = ubo.proj * ubo.view * vec4(inPos, 1.f);
+	//outUVW.xy *= -1.0;
+	mat4 viewNoTranslate = mat4(mat3(ubo.view));
+	vec4 pos = ubo.proj * viewNoTranslate * vec4(inPos, 1.f);
 	gl_Position = pos.xyww;
 }
