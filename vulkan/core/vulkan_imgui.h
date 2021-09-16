@@ -14,23 +14,21 @@ private:
 	} pushConstBlock;
 
 	/** vertex & index buffer */
-	VkBuffer vertexBuffer						= VK_NULL_HANDLE;
-	VkBuffer indexBuffer						= VK_NULL_HANDLE;
-	MemoryAllocator::HostVisibleMemory vertexMem;
-	MemoryAllocator::HostVisibleMemory indexMem;
-	int32_t vertexCount							= 0;
-	int32_t indexCount							= 0;
+	VkBuffer vertexIndexBuffer							= VK_NULL_HANDLE;
+	MemoryAllocator::HostVisibleMemory vertexIndexMem;
+	int32_t vertexCount									= 0;
+	int32_t indexCount									= 0;
 	/** font image */
 	Texture2D fontImage;
 	/** pipeline */
-	VkPipelineLayout pipelineLayout				= VK_NULL_HANDLE;
-	VkPipeline pipeline							= VK_NULL_HANDLE;
+	VkPipelineLayout pipelineLayout						= VK_NULL_HANDLE;
+	VkPipeline pipeline									= VK_NULL_HANDLE;
 	/** descriptor sets */
 	DescriptorSetBindings bindings;
-	VkDescriptorPool descriptorPool				= VK_NULL_HANDLE;
-	VkDescriptorSetLayout descriptorSetLayout	= VK_NULL_HANDLE;
+	VkDescriptorPool descriptorPool						= VK_NULL_HANDLE;
+	VkDescriptorSetLayout descriptorSetLayout			= VK_NULL_HANDLE;
 	std::vector<VkDescriptorSet> descriptorSets;
-	VulkanDevice* devices						= nullptr;
+	VulkanDevice* devices								= nullptr;
 
 public:
 	/** @brief init context & style & resources */
@@ -41,7 +39,12 @@ public:
 	/** @brief start imgui frame */
 	void newFrame();
 	/** @brief update vertex & index buffer */
-	void updateBuffers();
+	bool updateBuffers();
 	/** @brief record imgui draw commands */
 	void drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame);
+
+	/* user input collection */
+	struct UserInput {
+		bool modelRotate = true;
+	} userInput;
 };
