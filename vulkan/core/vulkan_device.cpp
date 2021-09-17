@@ -116,6 +116,9 @@ void VulkanDevice::createLogicalDevice() {
 	if (availableFeatures.features.samplerAnisotropy == VK_TRUE) {
 		deviceFeatures.features.samplerAnisotropy = VK_TRUE;
 	}
+	if (availableFeatures.features.sampleRateShading == VK_TRUE) {
+		deviceFeatures.features.sampleRateShading = VK_TRUE;
+	}
 	deviceInfo.pNext = &deviceFeatures;
 
 	VkMemoryAllocateFlags memflags = 0;

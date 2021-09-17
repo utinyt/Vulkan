@@ -85,7 +85,7 @@ void Imgui::newFrame() {
 	ImGui::Begin("Setting");
 	
 	ImGui::Text("MSAA");
-	static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_8_BIT;
+	static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_1_BIT;
 	for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
 		std::string buttonStr = "x" + std::to_string(sampleCount);
 		ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);

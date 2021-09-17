@@ -79,9 +79,9 @@ protected:
 	/** depth format */
 	VkFormat depthFormat;
 	/** depth image handle */
-	VkImage depthImage;
+	VkImage depthImage = VK_NULL_HANDLE;
 	/** depth image view handle */
-	VkImageView depthImageView;
+	VkImageView depthImageView = VK_NULL_HANDLE;
 	/** multisample color buffer */
 	VkImage multisampleColorImage = VK_NULL_HANDLE;
 	/** multisample color image view*/

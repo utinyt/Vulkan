@@ -167,7 +167,8 @@ private:
 		//swapchain present attachment
 		attachments[0].format = swapchain.surfaceFormat.format;
 		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].loadOp = isCurrentSampleCount1 ? 
+			VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -266,6 +267,8 @@ private:
 
 		VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
 			vktools::initializers::pipelineMultisampleStateCreateInfo(imgui.userInput.currentSampleCount);
+		multisampleStateInfo.sampleShadingEnable = VK_TRUE;
+		multisampleStateInfo.minSampleShading = 0.2f;
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
 			vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS);
@@ -367,6 +370,8 @@ private:
 			clearValues[1].depthStencil = { 1.f, 0 };
 			clearValues[2].color = clearColor;
 		}
+
+		clearValues.shrink_to_fit();
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

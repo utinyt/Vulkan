@@ -48,7 +48,7 @@ public:
 	/* user input collection */
 	struct UserInput {
 		bool modelRotate = true;
-		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_8_BIT;
+		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_1_BIT;
 	} userInput;
 
 	bool sampleCountChanged = false;
