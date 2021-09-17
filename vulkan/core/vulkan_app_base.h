@@ -74,6 +74,10 @@ protected:
 	VkImage depthImage;
 	/** depth image view handle */
 	VkImageView depthImageView;
+	/** multisample color buffer */
+	VkImage multisampleColorImage;
+	/** multisample color image view*/
+	VkImageView multisampleColorImageView;
 
 private:
 	void initWindow();
@@ -84,8 +88,14 @@ private:
 	void destroyCommandBuffers();
 	void createSyncObjects();
 	void createPipelineCache();
-	void createDepthStencilImage();
+
+	//depth buffering
+	void createDepthStencilImage(VkSampleCountFlagBits sampleCount);
 	void destroyDepthStencilImage();
+
+	//msaa
+	void createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount);
+	void destroyMultisampleColorBuffer();
 };
 
 /*

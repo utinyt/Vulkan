@@ -39,12 +39,22 @@ void VulkanDevice::pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface,
 		throw std::runtime_error("failed to find suitable GPU");
 	}
 
+	//properties & features
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 	vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-	rtFeatures.pNext = &asFeatures;
-	vk12Features.pNext = &rtFeatures;
 	availableFeatures.pNext = &vk12Features;
 	vkGetPhysicalDeviceFeatures2(physicalDevice, &availableFeatures);
+
+	//for anti-aliasing
+	maxSampleCount = getMaxSampleCount();
+
+	//check if current device support VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT memory type
+	for (uint32_t memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; ++memoryTypeIndex) {
+		if (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
+			lazilyAllocatedMemoryTypeExist = true;
+			break;
+		}
+	}
 
 	LOG("initialized:\tphysical device");
 }
@@ -295,11 +305,16 @@ void VulkanDevice::copyBuffer(VkCommandPool commandPool, VkBuffer srcBuffer, VkB
 * @param image - return image handle
 * @param imageMemory - return image memory handle
 */
-MemoryAllocator::HostVisibleMemory VulkanDevice::createImage(VkImage& image, VkExtent3D extent,
-	VkFormat format, VkImageTiling tiling,
-	VkImageUsageFlags usage, VkMemoryPropertyFlags properties) {
+MemoryAllocator::HostVisibleMemory VulkanDevice::createImage(VkImage& image,
+	VkExtent3D extent,
+	VkFormat format,
+	VkImageTiling tiling,
+	VkImageUsageFlags usage,
+	VkMemoryPropertyFlags properties,
+	VkSampleCountFlagBits numSamples) {
 	//image creation
-	VkImageCreateInfo imageInfo = vktools::initializers::imageCreateInfo(extent, format, tiling, usage);
+	VkImageCreateInfo imageInfo = 
+		vktools::initializers::imageCreateInfo(extent, format, tiling, usage, numSamples);
 	VK_CHECK_RESULT(vkCreateImage(device, &imageInfo, nullptr, &image));
 	return memoryAllocator.allocateImageMemory(image, properties);
 }
@@ -371,4 +386,23 @@ void VulkanDevice::endOneTimeSubmitCommandBuffer(VkCommandBuffer commandBuffer) 
 	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	VK_CHECK_RESULT(vkQueueWaitIdle(graphicsQueue));
 	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+/*
+* get max sample count from the device
+* 
+* @return VkSampleCountFlagBits - max sample count
+*/
+VkSampleCountFlagBits VulkanDevice::getMaxSampleCount() const {
+	VkSampleCountFlags counts =
+		properties.limits.framebufferColorSampleCounts & 
+		properties.limits.framebufferDepthSampleCounts;
+
+	if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
+	if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
+	if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
+	if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+	if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+	if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
+
+	return VK_SAMPLE_COUNT_1_BIT;
 }

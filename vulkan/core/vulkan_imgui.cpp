@@ -1,7 +1,7 @@
 #include <array>
 #include <imgui/imgui.h>
+#include <string>
 #include "vulkan_imgui.h"
-#include <filesystem>
 
 /*
 * init context & style & resources
@@ -79,7 +79,7 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 		vktools::initializers::pipelineViewportStateCreateInfo();
 
 	VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
-		vktools::initializers::pipelineMultisampleStateCreateInfo();
+		vktools::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_8_BIT);
 
 	VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicStateInfo =
@@ -154,9 +154,15 @@ void Imgui::cleanup() {
 void Imgui::newFrame() {
 	ImGui::NewFrame();
 	ImGui::Begin("Setting");
-	ImGui::Checkbox("Rotate", &userInput.modelRotate);
+	
+	ImGui::Text("MSAA");
+	for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
+		std::string buttonStr = "x" + std::to_string(sampleCount);
+		//ImGui::RadioButton(buttonStr.c_str(), &userInput.currentSampleCount, sampleCount); 
+		ImGui::SameLine();
+	}
+
 	ImGui::End();
-	ImGui::ShowDemoWindow();
 	ImGui::Render();
 }
 

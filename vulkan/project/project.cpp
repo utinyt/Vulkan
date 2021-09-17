@@ -61,17 +61,11 @@ public:
 
 		//mesh loading & buffer creation
 		mesh.load("../meshes/bunny.obj");
-		VkDeviceSize vertexBufferSize = mesh.vertices.bufferSize;
-		VkDeviceSize indexBufferSize = sizeof(mesh.indices[0]) * mesh.indices.size();
-		Mesh::Buffer buffer;
-		buffer.allocate(vertexBufferSize + indexBufferSize);
-		buffer.push(mesh.vertices.data(), vertexBufferSize);
-		buffer.push(mesh.indices.data(), indexBufferSize);
-		createVertexIndexBuffer(buffer.data(), vertexBufferSize + indexBufferSize,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, vertexIndexBuffer);
+		vertexIndexBuffer = mesh.createModelBuffer(&devices);
 		
 		//render pass
-		renderPass = vktools::createRenderPass(devices.device, { swapchain.surfaceFormat.format }, depthFormat);
+		//renderPass = vktools::createRenderPass(devices.device, { swapchain.surfaceFormat.format }, depthFormat);
+		createRenderPass(VK_SAMPLE_COUNT_8_BIT);
 		//pipeline
 		createPipeline();
 		//framebuffer
@@ -141,6 +135,78 @@ private:
 		submitFrame(imageIndex);
 	}
 
+	void createRenderPass(VkSampleCountFlagBits sampleCount) {
+		std::array<VkAttachmentDescription, 3> attachments{};
+
+		//multisample color attachment
+		attachments[0].format = swapchain.surfaceFormat.format;
+		attachments[0].samples = sampleCount;
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference colorRef{};
+		colorRef.attachment = 0;
+		colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		
+		//swapchain present attachment
+		attachments[1].format = swapchain.surfaceFormat.format;
+		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		VkAttachmentReference resolveRef{};
+		resolveRef.attachment = 1;
+		resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		//depth attachment
+		attachments[2].format = depthFormat;
+		attachments[2].samples = sampleCount;
+		attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference depthRef{};
+		depthRef.attachment = 2;
+		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		//subpass
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &colorRef;
+		subpass.pDepthStencilAttachment = &depthRef;
+		subpass.pResolveAttachments = &resolveRef;
+
+		//subpass dependency
+		VkSubpassDependency dependency{};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.srcAccessMask = 0;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		//create renderpass
+		VkRenderPassCreateInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderPassInfo.pAttachments = attachments.data();
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+		renderPassInfo.dependencyCount = 1;
+		renderPassInfo.pDependencies = &dependency;
+
+		VK_CHECK_RESULT(vkCreateRenderPass(devices.device, &renderPassInfo, nullptr, &renderPass));
+	}
+
 	/*
 	* create graphics pipeline
 	*/
@@ -166,7 +232,7 @@ private:
 			vktools::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT);
 
 		VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
-			vktools::initializers::pipelineMultisampleStateCreateInfo();
+			vktools::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_8_BIT);
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
 			vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS);
@@ -226,7 +292,8 @@ private:
 		framebuffers.resize(swapchain.imageCount);
 
 		for (size_t i = 0; i < swapchain.imageCount; ++i) {
-			std::array<VkImageView, 2> attachments = {
+			std::array<VkImageView, 3> attachments = {
+				multisampleColorImageView,
 				swapchain.imageViews[i],
 				depthImageView
 			};
@@ -244,46 +311,6 @@ private:
 		LOG("created:\tframebuffers");
 	}
 
-	/** @brief build buffer - used to create vertex / index buffer */
-	/*
-	* build buffer - used to create vertex / index buffer
-	*
-	* @param bufferData - data to transfer
-	* @param bufferSize
-	* @param usage - buffer usage (vertex / index bit)
-	* @param buffer - buffer handle
-	* @param bufferMemory - buffer memory handle
-	*/
-	void createVertexIndexBuffer(const void* bufferData, VkDeviceSize bufferSize, VkBufferUsageFlags usage,
-		VkBuffer& buffer) {
-		//create staging buffer
-		VkBuffer stagingBuffer;
-		VkBufferCreateInfo stagingBufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &stagingBufferCreateInfo, nullptr, &stagingBuffer));
-
-		//suballocate
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		MemoryAllocator::HostVisibleMemory hostVisibleMemory = devices.memoryAllocator.allocateBufferMemory(
-			stagingBuffer, properties);
-
-		hostVisibleMemory.mapData(devices.device, bufferData);
-
-		//create vertex & index buffer
-		VkBufferCreateInfo bufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bufferCreateInfo, nullptr, &buffer));
-
-		//suballocation
-		devices.memoryAllocator.allocateBufferMemory(buffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		//host visible -> device local
-		devices.copyBuffer(devices.commandPool, stagingBuffer, buffer, bufferSize);
-
-		devices.memoryAllocator.freeBufferMemory(stagingBuffer, properties);
-		vkDestroyBuffer(devices.device, stagingBuffer, nullptr);
-	}
-
 	/*
 	* record drawing commands to command buffers
 	*/
@@ -291,9 +318,10 @@ private:
 		VkCommandBufferBeginInfo cmdBufBeginInfo{};
 		cmdBufBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-		std::array<VkClearValue, 2> clearValues{};
+		std::array<VkClearValue, 3> clearValues{};
 		clearValues[0].color = { 0.f, 0.2f, 0.f, 1.f };
-		clearValues[1].depthStencil = { 1.f, 0 };
+		clearValues[1].color = { 0.f, 0.2f, 0.f, 1.f };
+		clearValues[2].depthStencil = { 1.f, 0 };
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

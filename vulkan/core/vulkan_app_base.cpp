@@ -27,6 +27,7 @@ VulkanAppBase::VulkanAppBase(int width, int height, const std::string& appName)
 * app destructor
 */
 VulkanAppBase::~VulkanAppBase() {
+	destroyMultisampleColorBuffer();
 	destroyDepthStencilImage();
 	devices.memoryAllocator.cleanup();
 
@@ -127,7 +128,8 @@ void VulkanAppBase::initApp() {
 	createCommandBuffers();
 	createSyncObjects();
 	createPipelineCache();
-	createDepthStencilImage();
+	createDepthStencilImage(VK_SAMPLE_COUNT_8_BIT);//(static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount));
+	createMultisampleColorBuffer(VK_SAMPLE_COUNT_8_BIT);//(static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount));
 }
 
 /*
@@ -214,9 +216,15 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 	//swapchain
 	swapchain.create();
 
+	//VkSampleCountFlagBits sampleCount =
+	//	static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount);
+
 	//depth stencil image
 	destroyDepthStencilImage();
-	createDepthStencilImage();
+	createDepthStencilImage(VK_SAMPLE_COUNT_8_BIT);
+	//multisample color buffer
+	destroyMultisampleColorBuffer();
+	createMultisampleColorBuffer(VK_SAMPLE_COUNT_8_BIT);
 
 	//framebuffer
 	createFramebuffers();
@@ -395,7 +403,7 @@ void VulkanAppBase::createPipelineCache() {
 /*
 * setup depth & stencil buffers
 */
-void VulkanAppBase::createDepthStencilImage() {
+void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 	depthFormat = vktools::findSupportedFormat(devices.physicalDevice,
 		{VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
 		VK_IMAGE_TILING_OPTIMAL,
@@ -405,8 +413,10 @@ void VulkanAppBase::createDepthStencilImage() {
 	devices.createImage(depthImage, { swapchain.extent.width,swapchain.extent.height, 1 },
 		depthFormat,
 		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		sampleCount
+	);
 
 	depthImageView = vktools::createImageView(devices.device, depthImage,
 		VK_IMAGE_VIEW_TYPE_2D, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -426,4 +436,36 @@ void VulkanAppBase::destroyDepthStencilImage() {
 	vkDestroyImageView(devices.device, depthImageView, nullptr);
 	devices.memoryAllocator.freeImageMemory(depthImage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	vkDestroyImage(devices.device, depthImage, nullptr);
+}
+
+/*
+* create multisample buffers for color / depth images
+*/
+void VulkanAppBase::createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount) {	
+	//create multisample color buffer
+	devices.createImage(multisampleColorImage,
+		{ swapchain.extent.width,swapchain.extent.height, 1 },
+		swapchain.surfaceFormat.format,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		sampleCount
+	);
+
+	multisampleColorImageView = vktools::createImageView(devices.device,
+		multisampleColorImage,
+		VK_IMAGE_VIEW_TYPE_2D,
+		swapchain.surfaceFormat.format,
+		VK_IMAGE_ASPECT_COLOR_BIT
+	);
+}
+
+/*
+* destroy multisample (color buffer) resources
+*/
+void VulkanAppBase::destroyMultisampleColorBuffer() {
+	vkDestroyImageView(devices.device, multisampleColorImageView, nullptr);
+	devices.memoryAllocator.freeImageMemory(multisampleColorImage,
+		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	vkDestroyImage(devices.device, multisampleColorImage, nullptr);
 }

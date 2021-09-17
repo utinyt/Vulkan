@@ -1,6 +1,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include "vulkan_mesh.h"
+#include "vulkan_device.h"
 
 /*
 * constructor - simply calls load()
@@ -79,6 +80,54 @@ void Mesh::load(const std::string& path) {
 			indices.push_back(static_cast<uint32_t>(indices.size()));
 		}
 	}
+}
+
+/*
+* create vertex+index buffer 
+* 
+* @return VkBuffer - created buffer
+*/
+VkBuffer Mesh::createModelBuffer(VulkanDevice* devices) {
+	VkDeviceSize vertexBufferSize = vertices.bufferSize;
+	VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+	VkDeviceSize totalSize = vertexBufferSize + indexBufferSize;
+	Mesh::Buffer buffer;
+	buffer.allocate(totalSize);
+	buffer.push(vertices.data(), vertexBufferSize);
+	buffer.push(indices.data(), indexBufferSize);
+
+	//create staging buffer
+	VkBuffer stagingBuffer;
+	VkBufferCreateInfo stagingBufferCreateInfo = vktools::initializers::bufferCreateInfo(
+		totalSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	VK_CHECK_RESULT(vkCreateBuffer(devices->device, &stagingBufferCreateInfo, nullptr, &stagingBuffer));
+
+	//suballocate
+	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	MemoryAllocator::HostVisibleMemory hostVisibleMemory = devices->memoryAllocator.allocateBufferMemory(
+		stagingBuffer, properties);
+
+	hostVisibleMemory.mapData(devices->device, buffer.data());
+
+	//create vertex & index buffer
+	VkBuffer vertexIndexBuffer;
+	VkBufferCreateInfo bufferCreateInfo = vktools::initializers::bufferCreateInfo(
+		totalSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | 
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | 
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	VK_CHECK_RESULT(vkCreateBuffer(devices->device, &bufferCreateInfo, nullptr, &vertexIndexBuffer));
+
+	//suballocation
+	devices->memoryAllocator.allocateBufferMemory(vertexIndexBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	//host visible -> device local
+	devices->copyBuffer(devices->commandPool, stagingBuffer, vertexIndexBuffer, totalSize);
+
+	devices->memoryAllocator.freeBufferMemory(stagingBuffer, properties);
+	vkDestroyBuffer(devices->device, stagingBuffer, nullptr);
+	buffer.cleanup();
+
+	return vertexIndexBuffer;
 }
 
 VkVertexInputBindingDescription Mesh::getBindingDescription() const{

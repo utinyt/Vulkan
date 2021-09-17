@@ -46,5 +46,6 @@ public:
 	/* user input collection */
 	struct UserInput {
 		bool modelRotate = true;
+		int currentSampleCount = 8;
 	} userInput;
 };

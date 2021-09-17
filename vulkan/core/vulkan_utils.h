@@ -86,8 +86,12 @@ namespace vktools {
 			return info;
 		}
 
-		inline VkImageCreateInfo imageCreateInfo(VkExtent3D extent,
-			VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage) {
+		inline VkImageCreateInfo imageCreateInfo(
+			VkExtent3D extent,
+			VkFormat format,
+			VkImageTiling tiling,
+			VkImageUsageFlags usage,
+			VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT) {
 			VkImageCreateInfo info{};
 			info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 			if (extent.depth == 1) {
@@ -107,7 +111,7 @@ namespace vktools {
 			info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			info.usage = usage;
 			info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			info.samples = VK_SAMPLE_COUNT_1_BIT;
+			info.samples = numSamples;
 			return info;
 		}
 
