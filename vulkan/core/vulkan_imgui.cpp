@@ -50,79 +50,8 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 	}
 	vkUpdateDescriptorSets(devices->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-	//pipeline 
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = 
-		vktools::initializers::pipelineLayoutCreateInfo(1, &descriptorSetLayout);
-	
-	VkPushConstantRange pushConstantRange{ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) };
-	pipelineLayoutInfo.pushConstantRangeCount = 1;
-	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-	VK_CHECK_RESULT(vkCreatePipelineLayout(devices->device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
-
-	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo =
-		vktools::initializers::pipelineInputAssemblyStateCreateInfo();
-
-	VkPipelineRasterizationStateCreateInfo rasterizationInfo =
-		vktools::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
-
-	VkPipelineColorBlendAttachmentState blendAttachmentState =
-		vktools::initializers::pipelineColorBlendAttachment(VK_TRUE);
-
-	VkPipelineColorBlendStateCreateInfo colorBlendInfo =
-		vktools::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-
-	VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
-		vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-	VkPipelineViewportStateCreateInfo viewportStateInfo =
-		vktools::initializers::pipelineViewportStateCreateInfo();
-
-	VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
-		vktools::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_8_BIT);
-
-	VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-	VkPipelineDynamicStateCreateInfo dynamicStateInfo =
-		vktools::initializers::pipelineDynamicStateCreateInfo(dynamicStates, 2);
-
-	VkVertexInputBindingDescription vertexInputBinding = {
-		vktools::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert))
-	};
-
-	std::array<VkVertexInputAttributeDescription, 3> vertexInputAttributes = {
-		vktools::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos)),
-		vktools::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv)),
-		vktools::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col))
-	};
-
-	VkPipelineVertexInputStateCreateInfo vertexInputStateInfo =
-		vktools::initializers::pipelineVertexInputStateCreateInfo(&vertexInputBinding, 1,
-			vertexInputAttributes.data(), static_cast<uint32_t>(vertexInputAttributes.size()));
-
-	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
-	VkShaderModule vertexShader = vktools::createShaderModule(devices->device,
-		vktools::readFile("../core/shaders/imgui_vert.spv"));
-	VkShaderModule fragmentShader = vktools::createShaderModule(devices->device,
-		vktools::readFile("../core/shaders/imgui_frag.spv"));
-	shaderStages[0] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShader);
-	shaderStages[1] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader);
-
-	VkGraphicsPipelineCreateInfo pipelineInfo 
-		= vktools::initializers::graphicsPipelineCreateInfo(pipelineLayout, renderPass);
-	pipelineInfo.pVertexInputState		= &vertexInputStateInfo;
-	pipelineInfo.pInputAssemblyState	= &inputAssemblyInfo;
-	pipelineInfo.pRasterizationState	= &rasterizationInfo;
-	pipelineInfo.pColorBlendState		= &colorBlendInfo;
-	pipelineInfo.pMultisampleState		= &multisampleStateInfo;
-	pipelineInfo.pViewportState			= &viewportStateInfo;
-	pipelineInfo.pDepthStencilState		= &depthStencilStateInfo;
-	pipelineInfo.pDynamicState			= &dynamicStateInfo;
-	pipelineInfo.stageCount				= static_cast<uint32_t>(shaderStages.size());
-	pipelineInfo.pStages				= shaderStages.data();
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(devices->device, {}, 1, &pipelineInfo, nullptr, &pipeline));
-
-	vkDestroyShaderModule(devices->device, vertexShader, nullptr);
-	vkDestroyShaderModule(devices->device, fragmentShader, nullptr);
+	//create render pass
+	createPipeline(renderPass);
 
 	//build first frame
 	newFrame();
@@ -156,10 +85,15 @@ void Imgui::newFrame() {
 	ImGui::Begin("Setting");
 	
 	ImGui::Text("MSAA");
+	static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_8_BIT;
 	for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
 		std::string buttonStr = "x" + std::to_string(sampleCount);
-		//ImGui::RadioButton(buttonStr.c_str(), &userInput.currentSampleCount, sampleCount); 
+		ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);
 		ImGui::SameLine();
+	}
+	if (count != userInput.currentSampleCount) {
+		userInput.currentSampleCount = count;
+		sampleCountChanged = true;
 	}
 
 	ImGui::End();
@@ -265,4 +199,88 @@ void Imgui::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
 			vertexOffset += cmd_list->VtxBuffer.Size;
 		}
 	}
+}
+
+/*
+* create graphics pipeline for imgui 
+*/
+void Imgui::createPipeline(VkRenderPass renderPass) {
+	if (pipeline != VK_NULL_HANDLE) {
+		vkDestroyPipeline(devices->device, pipeline, nullptr);
+		vkDestroyPipelineLayout(devices->device, pipelineLayout, nullptr);
+	}
+
+	//pipeline 
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo =
+		vktools::initializers::pipelineLayoutCreateInfo(1, &descriptorSetLayout);
+
+	VkPushConstantRange pushConstantRange{ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) };
+	pipelineLayoutInfo.pushConstantRangeCount = 1;
+	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+	VK_CHECK_RESULT(vkCreatePipelineLayout(devices->device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
+
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo =
+		vktools::initializers::pipelineInputAssemblyStateCreateInfo();
+
+	VkPipelineRasterizationStateCreateInfo rasterizationInfo =
+		vktools::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+
+	VkPipelineColorBlendAttachmentState blendAttachmentState =
+		vktools::initializers::pipelineColorBlendAttachment(VK_TRUE);
+
+	VkPipelineColorBlendStateCreateInfo colorBlendInfo =
+		vktools::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+
+	VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
+		vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+	VkPipelineViewportStateCreateInfo viewportStateInfo =
+		vktools::initializers::pipelineViewportStateCreateInfo();
+
+	VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
+		vktools::initializers::pipelineMultisampleStateCreateInfo(userInput.currentSampleCount);
+
+	VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	VkPipelineDynamicStateCreateInfo dynamicStateInfo =
+		vktools::initializers::pipelineDynamicStateCreateInfo(dynamicStates, 2);
+
+	VkVertexInputBindingDescription vertexInputBinding = {
+		vktools::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert))
+	};
+
+	std::array<VkVertexInputAttributeDescription, 3> vertexInputAttributes = {
+		vktools::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos)),
+		vktools::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv)),
+		vktools::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col))
+	};
+
+	VkPipelineVertexInputStateCreateInfo vertexInputStateInfo =
+		vktools::initializers::pipelineVertexInputStateCreateInfo(&vertexInputBinding, 1,
+			vertexInputAttributes.data(), static_cast<uint32_t>(vertexInputAttributes.size()));
+
+	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+	VkShaderModule vertexShader = vktools::createShaderModule(devices->device,
+		vktools::readFile("../core/shaders/imgui_vert.spv"));
+	VkShaderModule fragmentShader = vktools::createShaderModule(devices->device,
+		vktools::readFile("../core/shaders/imgui_frag.spv"));
+	shaderStages[0] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShader);
+	shaderStages[1] = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader);
+
+	VkGraphicsPipelineCreateInfo pipelineInfo
+		= vktools::initializers::graphicsPipelineCreateInfo(pipelineLayout, renderPass);
+	pipelineInfo.pVertexInputState = &vertexInputStateInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssemblyInfo;
+	pipelineInfo.pRasterizationState = &rasterizationInfo;
+	pipelineInfo.pColorBlendState = &colorBlendInfo;
+	pipelineInfo.pMultisampleState = &multisampleStateInfo;
+	pipelineInfo.pViewportState = &viewportStateInfo;
+	pipelineInfo.pDepthStencilState = &depthStencilStateInfo;
+	pipelineInfo.pDynamicState = &dynamicStateInfo;
+	pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+	pipelineInfo.pStages = shaderStages.data();
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(devices->device, {}, 1, &pipelineInfo, nullptr, &pipeline));
+
+	vkDestroyShaderModule(devices->device, vertexShader, nullptr);
+	vkDestroyShaderModule(devices->device, fragmentShader, nullptr);
 }

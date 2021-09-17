@@ -15,16 +15,24 @@ public:
 protected:
 	virtual void initApp();
 	virtual void draw() = 0;
-	void update();
+	virtual void update();
 
 	uint32_t prepareFrame();
 	void submitFrame(uint32_t imageIndex);
 	
 	virtual void resizeWindow(bool recordCommandBuffer = true);
 	static void windowResizeCallbck(GLFWwindow* window, int width, int height);
+	
 	void resetCommandBuffer();
 	virtual void createFramebuffers() = 0;
 	virtual void recordCommandBuffer() = 0;
+
+	//depth buffering
+	void createDepthStencilImage(VkSampleCountFlagBits sampleCount);
+	void destroyDepthStencilImage();
+	//msaa
+	void createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount);
+	void destroyMultisampleColorBuffer();
 
 	/** glfw window handle */
 	GLFWwindow* window;
@@ -75,9 +83,9 @@ protected:
 	/** depth image view handle */
 	VkImageView depthImageView;
 	/** multisample color buffer */
-	VkImage multisampleColorImage;
+	VkImage multisampleColorImage = VK_NULL_HANDLE;
 	/** multisample color image view*/
-	VkImageView multisampleColorImageView;
+	VkImageView multisampleColorImageView = VK_NULL_HANDLE;
 
 private:
 	void initWindow();
@@ -88,14 +96,6 @@ private:
 	void destroyCommandBuffers();
 	void createSyncObjects();
 	void createPipelineCache();
-
-	//depth buffering
-	void createDepthStencilImage(VkSampleCountFlagBits sampleCount);
-	void destroyDepthStencilImage();
-
-	//msaa
-	void createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount);
-	void destroyMultisampleColorBuffer();
 };
 
 /*

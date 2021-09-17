@@ -42,10 +42,14 @@ public:
 	bool updateBuffers();
 	/** @brief record imgui draw commands */
 	void drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame);
+	/** @brief create pipeline */
+	void createPipeline(VkRenderPass renderPass);
 
 	/* user input collection */
 	struct UserInput {
 		bool modelRotate = true;
-		int currentSampleCount = 8;
+		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_8_BIT;
 	} userInput;
+
+	bool sampleCountChanged = false;
 };

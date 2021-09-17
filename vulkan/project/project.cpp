@@ -63,9 +63,7 @@ public:
 		mesh.load("../meshes/bunny.obj");
 		vertexIndexBuffer = mesh.createModelBuffer(&devices);
 		
-		//render pass
-		//renderPass = vktools::createRenderPass(devices.device, { swapchain.surfaceFormat.format }, depthFormat);
-		createRenderPass(VK_SAMPLE_COUNT_8_BIT);
+		createRenderPass();
 		//pipeline
 		createPipeline();
 		//framebuffer
@@ -82,11 +80,11 @@ public:
 
 private:
 	/** render pass */
-	VkRenderPass renderPass;
+	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline;
+	VkPipeline pipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
-	VkPipelineLayout pipelineLayout;
+	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
 	std::vector<VkFramebuffer> framebuffers;
 	/** descriptor set bindings */
@@ -97,6 +95,8 @@ private:
 	VkDescriptorPool descriptorPool;
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
+	/** clear color */
+	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
 
 	/** vertex buffer handle */
 	VkBuffer vertexIndexBuffer;
@@ -135,55 +135,83 @@ private:
 		submitFrame(imageIndex);
 	}
 
-	void createRenderPass(VkSampleCountFlagBits sampleCount) {
-		std::array<VkAttachmentDescription, 3> attachments{};
+	/*
+	* called every frame - udpate glfw & imgui
+	*/
+	void update() override {
+		VulkanAppBase::update();
+		if (imgui.sampleCountChanged) {
+			imgui.sampleCountChanged = false;
+			changeMultisampleResources();
+		}
+	}
 
-		//multisample color attachment
+	/*
+	* create render pass
+	*/
+	void createRenderPass() {
+		if (renderPass != VK_NULL_HANDLE) {
+			vkDestroyRenderPass(devices.device, renderPass, nullptr);
+		}
+
+		bool isCurrentSampleCount1 = imgui.userInput.currentSampleCount == VK_SAMPLE_COUNT_1_BIT;
+
+		std::vector<VkAttachmentDescription> attachments{};
+		if (isCurrentSampleCount1) {
+			attachments.resize(2); //present + depth
+		}
+		else {
+			attachments.resize(3); //present + depth + multisample color buffer
+		}
+
+		//swapchain present attachment
 		attachments[0].format = swapchain.surfaceFormat.format;
-		attachments[0].samples = sampleCount;
-		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		VkAttachmentReference colorRef{};
-		colorRef.attachment = 0;
-		colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		
-		//swapchain present attachment
-		attachments[1].format = swapchain.surfaceFormat.format;
-		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		VkAttachmentReference resolveRef{};
-		resolveRef.attachment = 1;
+		resolveRef.attachment = 0;
 		resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		//depth attachment
-		attachments[2].format = depthFormat;
-		attachments[2].samples = sampleCount;
-		attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachments[1].format = depthFormat;
+		attachments[1].samples = imgui.userInput.currentSampleCount;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		VkAttachmentReference depthRef{};
-		depthRef.attachment = 2;
+		depthRef.attachment = 1;
 		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+		VkAttachmentReference colorRef{};
+		if (!isCurrentSampleCount1) {
+			//multisample color attachment
+			attachments[2].format = swapchain.surfaceFormat.format;
+			attachments[2].samples = imgui.userInput.currentSampleCount;
+			attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachments[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			colorRef.attachment = 2;
+			colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		}
+		
 		//subpass
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &colorRef;
+		subpass.pColorAttachments = isCurrentSampleCount1 ? &resolveRef : &colorRef;
 		subpass.pDepthStencilAttachment = &depthRef;
-		subpass.pResolveAttachments = &resolveRef;
+		subpass.pResolveAttachments = isCurrentSampleCount1 ? nullptr : &resolveRef;
 
 		//subpass dependency
 		VkSubpassDependency dependency{};
@@ -211,6 +239,11 @@ private:
 	* create graphics pipeline
 	*/
 	void createPipeline() {
+		if (pipeline != VK_NULL_HANDLE) {
+			vkDestroyPipeline(devices.device, pipeline, nullptr);
+			vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
+		}
+
 		auto bindingDescription = mesh.getBindingDescription();
 		auto attributeDescription = mesh.getAttributeDescriptions();
 		
@@ -232,7 +265,7 @@ private:
 			vktools::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT);
 
 		VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
-			vktools::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_8_BIT);
+			vktools::initializers::pipelineMultisampleStateCreateInfo(imgui.userInput.currentSampleCount);
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
 			vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS);
@@ -292,11 +325,15 @@ private:
 		framebuffers.resize(swapchain.imageCount);
 
 		for (size_t i = 0; i < swapchain.imageCount; ++i) {
-			std::array<VkImageView, 3> attachments = {
-				multisampleColorImageView,
-				swapchain.imageViews[i],
-				depthImageView
-			};
+			std::vector<VkImageView> attachments;
+			attachments.push_back(swapchain.imageViews[i]);
+			attachments.push_back(depthImageView);
+
+			if (imgui.userInput.currentSampleCount != VK_SAMPLE_COUNT_1_BIT) {
+				attachments.push_back(multisampleColorImageView);
+			}
+
+			attachments.shrink_to_fit();
 
 			VkFramebufferCreateInfo framebufferInfo{};
 			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -318,10 +355,18 @@ private:
 		VkCommandBufferBeginInfo cmdBufBeginInfo{};
 		cmdBufBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-		std::array<VkClearValue, 3> clearValues{};
-		clearValues[0].color = { 0.f, 0.2f, 0.f, 1.f };
-		clearValues[1].color = { 0.f, 0.2f, 0.f, 1.f };
-		clearValues[2].depthStencil = { 1.f, 0 };
+		std::vector<VkClearValue> clearValues{};
+		if (imgui.userInput.currentSampleCount == VK_SAMPLE_COUNT_1_BIT) {
+			clearValues.resize(2);
+			clearValues[0].color = clearColor;
+			clearValues[1].depthStencil = { 1.f, 0 };
+		}
+		else {
+			clearValues.resize(3);
+			clearValues[0].color = clearColor;
+			clearValues[1].depthStencil = { 1.f, 0 };
+			clearValues[2].color = clearColor;
+		}
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -390,8 +435,9 @@ private:
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
 		UBO ubo{};
-		ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 1.f, 0.f));
-		ubo.view = glm::lookAt(glm::vec3(0.f, 0.f, 4.f), glm::vec3(0.f, 0.5f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		//ubo.model = glm::rotate(glm::mat4(1.f), time / 2.f * glm::radians(90.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -0.6f, 0.f));
+		ubo.view = glm::lookAt(glm::vec3(0.f, 0.f, 2.f), glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;
@@ -408,6 +454,35 @@ private:
 			VkWriteDescriptorSet write = bindings.makeWrite(descriptorSets[i], 0, &bufferInfo);
 			vkUpdateDescriptorSets(devices.device, 1, &write, 0, nullptr);
 		}
+	}
+
+	/*
+	* change all resource related to multusampling
+	*/
+	void changeMultisampleResources() {
+		//finish all command before destroy vk resources
+		vkDeviceWaitIdle(devices.device);
+
+		//depth stencil image
+		destroyDepthStencilImage();
+		createDepthStencilImage(imgui.userInput.currentSampleCount);
+		//multisample color buffer
+		destroyMultisampleColorBuffer();
+		createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
+
+		//render pass
+		createRenderPass();
+		//pipeline
+		createPipeline();
+		//framebuffer
+		createFramebuffers();
+
+		//imgui pipeline
+		imgui.createPipeline(renderPass);
+
+		//command buffer
+		resetCommandBuffer();
+		recordCommandBuffer();
 	}
 };
 

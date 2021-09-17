@@ -128,8 +128,8 @@ void VulkanAppBase::initApp() {
 	createCommandBuffers();
 	createSyncObjects();
 	createPipelineCache();
-	createDepthStencilImage(VK_SAMPLE_COUNT_8_BIT);//(static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount));
-	createMultisampleColorBuffer(VK_SAMPLE_COUNT_8_BIT);//(static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount));
+	createDepthStencilImage(imgui.userInput.currentSampleCount);
+	createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
 }
 
 /*
@@ -150,6 +150,10 @@ void VulkanAppBase::update() {
 	imgui.newFrame();
 	//imgui buffer updated || (mouse hovering imgui window && clicked)
 	if (imgui.updateBuffers() || (ImGui::IsMouseDown(ImGuiMouseButton(0)) && io.WantCaptureKeyboard)) {
+		if (imgui.sampleCountChanged) {
+			//defer command buffer record
+			return;
+		}
 		resetCommandBuffer();
 		recordCommandBuffer();
 	}
@@ -216,15 +220,12 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 	//swapchain
 	swapchain.create();
 
-	//VkSampleCountFlagBits sampleCount =
-	//	static_cast<VkSampleCountFlagBits>(imgui.userInput.currentSampleCount);
-
 	//depth stencil image
 	destroyDepthStencilImage();
-	createDepthStencilImage(VK_SAMPLE_COUNT_8_BIT);
+	createDepthStencilImage(imgui.userInput.currentSampleCount);
 	//multisample color buffer
 	destroyMultisampleColorBuffer();
-	createMultisampleColorBuffer(VK_SAMPLE_COUNT_8_BIT);
+	createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
 
 	//framebuffer
 	createFramebuffers();
@@ -434,7 +435,8 @@ void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 */
 void VulkanAppBase::destroyDepthStencilImage() {
 	vkDestroyImageView(devices.device, depthImageView, nullptr);
-	devices.memoryAllocator.freeImageMemory(depthImage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	devices.memoryAllocator.freeImageMemory(depthImage,
+		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	vkDestroyImage(devices.device, depthImage, nullptr);
 }
 
@@ -442,6 +444,10 @@ void VulkanAppBase::destroyDepthStencilImage() {
 * create multisample buffers for color / depth images
 */
 void VulkanAppBase::createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount) {	
+	if (sampleCount == VK_SAMPLE_COUNT_1_BIT) {
+		return;
+	}
+
 	//create multisample color buffer
 	devices.createImage(multisampleColorImage,
 		{ swapchain.extent.width,swapchain.extent.height, 1 },
@@ -468,4 +474,7 @@ void VulkanAppBase::destroyMultisampleColorBuffer() {
 	devices.memoryAllocator.freeImageMemory(multisampleColorImage,
 		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	vkDestroyImage(devices.device, multisampleColorImage, nullptr);
+
+	multisampleColorImageView = VK_NULL_HANDLE;
+	multisampleColorImage = VK_NULL_HANDLE;
 }
