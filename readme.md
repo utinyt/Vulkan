@@ -1,6 +1,8 @@
 # DigiPen GAM400 - Vulkan Technical Demo
 This is a realtime 3D rendering application using Vulkan / C++ / GLSL.
 
+<hr style="border:1px solid gray"> </hr>
+
 ### Developing Environments
 -------
 * OS: Windows 10
