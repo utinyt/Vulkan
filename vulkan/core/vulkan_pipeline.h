@@ -34,6 +34,9 @@ public:
 	/** @brief (re)set depth stencil state info */
 	void setDepthStencilInfo(VkBool32 depthTest = VK_TRUE, VkBool32 depthWrite = VK_TRUE,
 		VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS);
+	/** @brief set sample count */
+	void setMultisampleInfo(VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT,
+		VkBool32 enableSampleShading = VK_FALSE, float minSampleShading = 0.f);
 
 	/** @brief generate pipeline & pipeline layout */
 	void generate(VkRenderPass renderPass,

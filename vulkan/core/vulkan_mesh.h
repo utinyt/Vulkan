@@ -3,12 +3,18 @@
 #include "vulkan_utils.h"
 #include "glm/glm.hpp"
 
+struct VulkanDevice;
 struct Mesh {
 	Mesh(){}
 	Mesh(const std::string& path);
+	/** @brief load obj model from a file */
 	void load(const std::string& path);
+	/** @brief create vertex+index buffer */
+	VkBuffer createModelBuffer(VulkanDevice* devices);
 
+	/** @brief return vertex binding description for current model */
 	VkVertexInputBindingDescription getBindingDescription() const;
+	/** @brief return vertex attribute description for current model */
 	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;
 
 	struct Buffer {

@@ -31,8 +31,7 @@ void PipelineGenerator::resetAll() {
 
 	setRasterizerInfo();
 
-	multisampleStateCreateInfo =
-		vktools::initializers::pipelineMultisampleStateCreateInfo();
+	setMultisampleInfo();
 
 	setDepthStencilInfo();
 
@@ -147,6 +146,15 @@ void PipelineGenerator::setDepthStencilInfo(VkBool32 depthTest, VkBool32 depthWr
 	VkCompareOp depthCompareOp) {
 	depthStencilStateCreateInfo =
 		vktools::initializers::pipelineDepthStencilStateCreateInfo(depthTest, depthWrite, depthCompareOp);
+}
+
+/*
+* set sample count (msaa)
+*/
+void PipelineGenerator::setMultisampleInfo(VkSampleCountFlagBits sampleCount,
+	VkBool32 enableSampleShading, float minSampleShading) {
+	multisampleStateCreateInfo =
+		vktools::initializers::pipelineMultisampleStateCreateInfo(sampleCount);
 }
 
 /*

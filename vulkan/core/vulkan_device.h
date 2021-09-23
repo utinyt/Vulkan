@@ -21,13 +21,16 @@ struct VulkanDevice {
 	/** @brief create image & image memory */
 	MemoryAllocator::HostVisibleMemory createImage(VkImage& image, VkExtent3D extent, VkFormat format,
 		VkImageTiling tiling, VkImageUsageFlags usage,
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT);
 	/** @brief copy data to an image */
 	void copyBufferToImage(VkBuffer buffer, VkImage image, VkOffset3D offset, VkExtent3D extent) const;
 	/** @brief create & start one-time submit command buffer */
 	VkCommandBuffer beginOneTimeSubmitCommandBuffer() const;
 	/** @brief submit command to the queue, end & destroy one-time submit command buffer */
 	void endOneTimeSubmitCommandBuffer(VkCommandBuffer commandBuffer) const;
+	/** @brief get max sample count */
+	VkSampleCountFlagBits getMaxSampleCount() const;
 
 	/** GPU handle */
 	VkPhysicalDevice physicalDevice;
@@ -54,17 +57,16 @@ struct VulkanDevice {
 	VkPhysicalDeviceProperties properties;
 	/** available device features */
 	VkPhysicalDeviceFeatures2 availableFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+	/** vulkan 1.2 features */
+	VkPhysicalDeviceVulkan12Features vk12Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 	/** command pool - graphics */
 	VkCommandPool commandPool = VK_NULL_HANDLE;
 	/** custom memory allocator */
 	MemoryAllocator memoryAllocator;
-
-	/** vulkan 1.2 features */
-	VkPhysicalDeviceVulkan12Features vk12Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-	/** ray tracing features */
-	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
-	/** acceleration features */
-	VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+	/** max sample count */
+	uint32_t maxSampleCount;
+	/** VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT support */
+	bool lazilyAllocatedMemoryTypeExist = false;
 
 	/** swapchain support details - used for swapchain creation*/
 	struct SwapchainSupportDetails {

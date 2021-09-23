@@ -71,31 +71,17 @@ public:
 
 		//mesh loading & buffer creation
 		model.load("../meshes/bunny.obj");
-		VkDeviceSize vertexBufferSize = model.vertices.bufferSize;
-		VkDeviceSize indexBufferSize = sizeof(model.indices[0]) * model.indices.size();
-		Mesh::Buffer buffer;
-		buffer.allocate(vertexBufferSize + indexBufferSize);
-		buffer.push(model.vertices.data(), vertexBufferSize);
-		buffer.push(model.indices.data(), indexBufferSize);
-		createVertexIndexBuffer(buffer.data(), vertexBufferSize + indexBufferSize,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, modelBuffer);
-		buffer.cleanup();
+		modelBuffer = model.createModelBuffer(&devices);
 
 		//skybox model loading & buffer creation
 		skybox.load("../meshes/cube.obj");
-		vertexBufferSize = skybox.vertices.bufferSize;
-		indexBufferSize = sizeof(skybox.indices[0]) * skybox.indices.size();
-		buffer.allocate(vertexBufferSize + indexBufferSize);
-		buffer.push(skybox.vertices.data(), vertexBufferSize);
-		buffer.push(skybox.indices.data(), indexBufferSize);
-		createVertexIndexBuffer(buffer.data(), vertexBufferSize + indexBufferSize,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skyboxBuffer);
+		skyboxBuffer = skybox.createModelBuffer(&devices);
 
 		//skybox texture load
 		skyboxTexture.load(&devices, "../textures/skybox");
 
 		//render pass
-		renderPass = vktools::createRenderPass(devices.device, { swapchain.surfaceFormat.format }, depthFormat);
+		createRenderPass();
 		//descriptor sets
 		createDescriptorSet();
 		//pipeline
@@ -114,9 +100,9 @@ public:
 
 private:
 	/** render pass */
-	VkRenderPass renderPass;
+	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline, skyboxPipeline;
+	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
@@ -129,6 +115,8 @@ private:
 	VkDescriptorPool descriptorPool;
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
+	/** clear color */
+	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
 
 	/** uniform buffer handle */
 	std::vector<VkBuffer> uniformBuffers;
@@ -172,9 +160,119 @@ private:
 	}
 
 	/*
+	* called every frame - udpate glfw & imgui
+	*/
+	void update() override {
+		VulkanAppBase::update();
+		if (imgui.sampleCountChanged) {
+			imgui.sampleCountChanged = false;
+			changeMultisampleResources();
+		}
+	}
+
+	/*
+	* create render pass
+	*/
+	void createRenderPass() {
+		if (renderPass != VK_NULL_HANDLE) {
+			vkDestroyRenderPass(devices.device, renderPass, nullptr);
+		}
+
+		bool isCurrentSampleCount1 = imgui.userInput.currentSampleCount == VK_SAMPLE_COUNT_1_BIT;
+
+		std::vector<VkAttachmentDescription> attachments{};
+		if (isCurrentSampleCount1) {
+			attachments.resize(2); //present + depth
+		}
+		else {
+			attachments.resize(3); //present + depth + multisample color buffer
+		}
+
+		//swapchain present attachment
+		attachments[0].format = swapchain.surfaceFormat.format;
+		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[0].loadOp = isCurrentSampleCount1 ? 
+			VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		VkAttachmentReference resolveRef{};
+		resolveRef.attachment = 0;
+		resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		//depth attachment
+		attachments[1].format = depthFormat;
+		attachments[1].samples = imgui.userInput.currentSampleCount;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference depthRef{};
+		depthRef.attachment = 1;
+		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference colorRef{};
+		if (!isCurrentSampleCount1) {
+			//multisample color attachment
+			attachments[2].format = swapchain.surfaceFormat.format;
+			attachments[2].samples = imgui.userInput.currentSampleCount;
+			attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachments[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			colorRef.attachment = 2;
+			colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		}
+		
+		//subpass
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = isCurrentSampleCount1 ? &resolveRef : &colorRef;
+		subpass.pDepthStencilAttachment = &depthRef;
+		subpass.pResolveAttachments = isCurrentSampleCount1 ? nullptr : &resolveRef;
+
+		//subpass dependency
+		VkSubpassDependency dependency{};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.srcAccessMask = 0;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		//create renderpass
+		VkRenderPassCreateInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderPassInfo.pAttachments = attachments.data();
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+		renderPassInfo.dependencyCount = 1;
+		renderPassInfo.pDependencies = &dependency;
+
+		VK_CHECK_RESULT(vkCreateRenderPass(devices.device, &renderPassInfo, nullptr, &renderPass));
+	}
+
+	/*
 	* create graphics pipeline
 	*/
 	void createPipeline() {
+		if (pipeline != VK_NULL_HANDLE) {
+			vkDestroyPipeline(devices.device, pipeline, nullptr);
+			vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
+			vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
+			pipeline = VK_NULL_HANDLE;
+			skyboxPipeline = VK_NULL_HANDLE;
+			pipelineLayout = VK_NULL_HANDLE;
+		}
+
 		/*
 		* pipeline for main model
 		*/
@@ -183,6 +281,7 @@ private:
 
 		PipelineGenerator gen(devices.device);
 		gen.setColorBlendInfo(VK_FALSE);
+		gen.setMultisampleInfo(imgui.userInput.currentSampleCount);
 		gen.addVertexInputBindingDescription({ bindingDescription });
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
@@ -205,6 +304,7 @@ private:
 		bindingDescription = skybox.getBindingDescription();
 		attributeDescription = skybox.getAttributeDescriptions();
 
+		gen.setMultisampleInfo(imgui.userInput.currentSampleCount, VK_TRUE, 0.2f);
 		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
 		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
 		gen.addVertexInputBindingDescription({ bindingDescription });
@@ -232,10 +332,15 @@ private:
 		framebuffers.resize(swapchain.imageCount);
 
 		for (size_t i = 0; i < swapchain.imageCount; ++i) {
-			std::array<VkImageView, 2> attachments = {
-				swapchain.imageViews[i],
-				depthImageView
-			};
+			std::vector<VkImageView> attachments;
+			attachments.push_back(swapchain.imageViews[i]);
+			attachments.push_back(depthImageView);
+
+			if (imgui.userInput.currentSampleCount != VK_SAMPLE_COUNT_1_BIT) {
+				attachments.push_back(multisampleColorImageView);
+			}
+
+			attachments.shrink_to_fit();
 
 			VkFramebufferCreateInfo framebufferInfo{};
 			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -250,46 +355,6 @@ private:
 		LOG("created:\tframebuffers");
 	}
 
-	/** @brief build buffer - used to create vertex / index buffer */
-	/*
-	* build buffer - used to create vertex / index buffer
-	*
-	* @param bufferData - data to transfer
-	* @param bufferSize
-	* @param usage - buffer usage (vertex / index bit)
-	* @param buffer - buffer handle
-	* @param bufferMemory - buffer memory handle
-	*/
-	void createVertexIndexBuffer(const void* bufferData, VkDeviceSize bufferSize, VkBufferUsageFlags usage,
-		VkBuffer& buffer) {
-		//create staging buffer
-		VkBuffer stagingBuffer;
-		VkBufferCreateInfo stagingBufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &stagingBufferCreateInfo, nullptr, &stagingBuffer));
-
-		//suballocate
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		MemoryAllocator::HostVisibleMemory hostVisibleMemory = devices.memoryAllocator.allocateBufferMemory(
-			stagingBuffer, properties);
-
-		hostVisibleMemory.mapData(devices.device, bufferData);
-
-		//create vertex & index buffer
-		VkBufferCreateInfo bufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bufferCreateInfo, nullptr, &buffer));
-
-		//suballocation
-		devices.memoryAllocator.allocateBufferMemory(buffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		//host visible -> device local
-		devices.copyBuffer(devices.commandPool, stagingBuffer, buffer, bufferSize);
-
-		devices.memoryAllocator.freeBufferMemory(stagingBuffer, properties);
-		vkDestroyBuffer(devices.device, stagingBuffer, nullptr);
-	}
-
 	/*
 	* record drawing commands to command buffers
 	*/
@@ -297,9 +362,20 @@ private:
 		VkCommandBufferBeginInfo cmdBufBeginInfo{};
 		cmdBufBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-		std::array<VkClearValue, 2> clearValues{};
-		clearValues[0].color = { 0.f, 0.2f, 0.f, 1.f };
-		clearValues[1].depthStencil = { 1.f, 0 };
+		std::vector<VkClearValue> clearValues{};
+		if (imgui.userInput.currentSampleCount == VK_SAMPLE_COUNT_1_BIT) {
+			clearValues.resize(2);
+			clearValues[0].color = clearColor;
+			clearValues[1].depthStencil = { 1.f, 0 };
+		}
+		else {
+			clearValues.resize(3);
+			clearValues[0].color = clearColor;
+			clearValues[1].depthStencil = { 1.f, 0 };
+			clearValues[2].color = clearColor;
+		}
+
+		clearValues.shrink_to_fit();
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -387,7 +463,7 @@ private:
 		
 		UBO ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
-		glm::vec3 camPos = glm::vec3(4 * std::cos(time), 0, 4 * std::sin(time));
+		glm::vec3 camPos = glm::vec3(3 * std::cos(time / 5), 0, 3 * std::sin(time / 5));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
@@ -423,6 +499,35 @@ private:
 			};
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
+	}
+
+	/*
+	* change all resource related to multusampling
+	*/
+	void changeMultisampleResources() {
+		//finish all command before destroy vk resources
+		vkDeviceWaitIdle(devices.device);
+
+		//depth stencil image
+		destroyDepthStencilImage();
+		createDepthStencilImage(imgui.userInput.currentSampleCount);
+		//multisample color buffer
+		destroyMultisampleColorBuffer();
+		createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
+
+		//render pass
+		createRenderPass();
+		//pipeline
+		createPipeline();
+		//framebuffer
+		createFramebuffers();
+
+		//imgui pipeline
+		imgui.createPipeline(renderPass);
+
+		//command buffer
+		resetCommandBuffer();
+		recordCommandBuffer();
 	}
 };
 

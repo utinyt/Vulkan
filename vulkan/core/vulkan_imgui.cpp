@@ -1,5 +1,6 @@
 #include <array>
 #include <imgui/imgui.h>
+#include <string>
 #include <filesystem>
 #include "vulkan_imgui.h"
 #include "vulkan_pipeline.h"
@@ -51,30 +52,8 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 	}
 	vkUpdateDescriptorSets(devices->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-	//pipeline 
-	std::vector<VkVertexInputBindingDescription> vertexInputBinding = {
-		vktools::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert))
-	};
-
-	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-		vktools::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos)),
-		vktools::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv)),
-		vktools::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col))
-	};
-
-	PipelineGenerator gen(devices->device);
-	gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
-	gen.setColorBlendInfo(VK_TRUE);
-	gen.setDepthStencilInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
-	gen.addDescriptorSetLayout({ descriptorSetLayout });
-	gen.addPushConstantRange({ { VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) } });
-	gen.addVertexInputBindingDescription(vertexInputBinding);
-	gen.addVertexInputAttributeDescription(vertexInputAttributes);
-	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_vert.spv")),
-		VK_SHADER_STAGE_VERTEX_BIT);
-	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_frag.spv")),
-		VK_SHADER_STAGE_FRAGMENT_BIT);
-	gen.generate(renderPass, &pipeline, &pipelineLayout);
+	//create render pass
+	createPipeline(renderPass);
 
 	//build first frame
 	newFrame();
@@ -109,6 +88,19 @@ void Imgui::cleanup() {
 void Imgui::newFrame() {
 	ImGui::NewFrame();
 	ImGui::Begin("Setting");
+	
+	ImGui::Text("MSAA");
+	static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_1_BIT;
+	for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
+		std::string buttonStr = "x" + std::to_string(sampleCount);
+		ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);
+		ImGui::SameLine();
+	}
+	if (count != userInput.currentSampleCount) {
+		userInput.currentSampleCount = count;
+		sampleCountChanged = true;
+	}
+
 	ImGui::End();
 	ImGui::Render();
 }
@@ -212,4 +204,42 @@ void Imgui::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
 			vertexOffset += cmd_list->VtxBuffer.Size;
 		}
 	}
+}
+
+/*
+* create graphics pipeline for imgui 
+*/
+void Imgui::createPipeline(VkRenderPass renderPass) {
+	if (pipeline != VK_NULL_HANDLE) {
+		vkDestroyPipeline(devices->device, pipeline, nullptr);
+		vkDestroyPipelineLayout(devices->device, pipelineLayout, nullptr);
+		pipeline = VK_NULL_HANDLE;
+		pipelineLayout = VK_NULL_HANDLE;
+	}
+
+	//pipeline 
+	std::vector<VkVertexInputBindingDescription> vertexInputBinding = {
+		vktools::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert))
+	};
+
+	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
+		vktools::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos)),
+		vktools::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv)),
+		vktools::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col))
+	};
+
+	PipelineGenerator gen(devices->device);
+	gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+	gen.setColorBlendInfo(VK_TRUE);
+	gen.setDepthStencilInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+	gen.setMultisampleInfo(userInput.currentSampleCount);
+	gen.addDescriptorSetLayout({ descriptorSetLayout });
+	gen.addPushConstantRange({ { VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) } });
+	gen.addVertexInputBindingDescription(vertexInputBinding);
+	gen.addVertexInputAttributeDescription(vertexInputAttributes);
+	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_vert.spv")),
+		VK_SHADER_STAGE_VERTEX_BIT);
+	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_frag.spv")),
+		VK_SHADER_STAGE_FRAGMENT_BIT);
+	gen.generate(renderPass, &pipeline, &pipelineLayout);
 }
