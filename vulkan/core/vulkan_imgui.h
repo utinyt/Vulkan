@@ -46,5 +46,6 @@ public:
 	/* user input collection */
 	struct UserInput {
 		bool modelRotate = true;
+		float camPosZ = 0;
 	} userInput;
 };

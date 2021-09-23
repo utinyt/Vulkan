@@ -23,6 +23,7 @@
     <ClCompile Include="core\vulkan_app_base.cpp" />
     <ClCompile Include="core\vulkan_debug.cpp" />
     <ClCompile Include="core\vulkan_device.cpp" />
+    <ClCompile Include="core\vulkan_pipeline.cpp" />
     <ClCompile Include="core\vulkan_swapchain.cpp" />
     <ClCompile Include="core\vulkan_texture.cpp" />
     <ClCompile Include="core\vulkan_utils.cpp" />
@@ -38,6 +39,7 @@
     <ClInclude Include="core\vulkan_imgui.h" />
     <ClInclude Include="core\vulkan_memory_allocator.h" />
     <ClInclude Include="core\vulkan_mesh.h" />
+    <ClInclude Include="core\vulkan_pipeline.h" />
     <ClInclude Include="core\vulkan_texture.h" />
     <ClInclude Include="core\vulkan_utils.h" />
     <ClInclude Include="core\vulkan_app_base.h" />

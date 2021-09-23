@@ -6,6 +6,8 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "core/vulkan_imgui.h"
+#include "core/vulkan_texture.h"
+#include "core/vulkan_pipeline.h"
 
 class VulkanApp : public VulkanAppBase {
 public:
@@ -13,6 +15,7 @@ public:
 	struct UBO {
 		glm::mat4 model;
 		glm::mat4 view;
+		glm::mat4 normalMatrix;
 		glm::mat4 proj;
 	};
 
@@ -27,21 +30,34 @@ public:
 	*/
 	~VulkanApp() {
 		imgui.cleanup();
-		vkDestroyDescriptorPool(devices.device, descriptorPool, nullptr);
 
+		//descriptor releated resources
+		vkDestroyDescriptorPool(devices.device, descriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
+
+		//uniform buffers
 		for (size_t i = 0; i < uniformBuffers.size(); ++i) {
 			devices.memoryAllocator.freeBufferMemory(uniformBuffers[i],
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 			vkDestroyBuffer(devices.device, uniformBuffers[i], nullptr);
 		}
 
-		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
-		devices.memoryAllocator.freeBufferMemory(vertexIndexBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, vertexIndexBuffer, nullptr);
+		//skybox textures
+		skyboxTexture.cleanup();
+		
+		//model & skybox buffers
+		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(skyboxBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, skyboxBuffer, nullptr);
 
+		//framebuffers
 		for (auto& framebuffer : framebuffers) {
 			vkDestroyFramebuffer(devices.device, framebuffer, nullptr);
 		}
+
+		//pipelines & render pass
+		vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 		vkDestroyPipeline(devices.device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
@@ -53,25 +69,35 @@ public:
 	virtual void initApp() override {
 		VulkanAppBase::initApp();
 
-		//descriptor - 1 uniform buffer
-		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
-		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
-		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
-
 		//mesh loading & buffer creation
-		mesh.load("../meshes/bunny.obj");
-		VkDeviceSize vertexBufferSize = mesh.vertices.bufferSize;
-		VkDeviceSize indexBufferSize = sizeof(mesh.indices[0]) * mesh.indices.size();
+		model.load("../meshes/bunny.obj");
+		VkDeviceSize vertexBufferSize = model.vertices.bufferSize;
+		VkDeviceSize indexBufferSize = sizeof(model.indices[0]) * model.indices.size();
 		Mesh::Buffer buffer;
 		buffer.allocate(vertexBufferSize + indexBufferSize);
-		buffer.push(mesh.vertices.data(), vertexBufferSize);
-		buffer.push(mesh.indices.data(), indexBufferSize);
+		buffer.push(model.vertices.data(), vertexBufferSize);
+		buffer.push(model.indices.data(), indexBufferSize);
 		createVertexIndexBuffer(buffer.data(), vertexBufferSize + indexBufferSize,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, vertexIndexBuffer);
-		
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, modelBuffer);
+		buffer.cleanup();
+
+		//skybox model loading & buffer creation
+		skybox.load("../meshes/cube.obj");
+		vertexBufferSize = skybox.vertices.bufferSize;
+		indexBufferSize = sizeof(skybox.indices[0]) * skybox.indices.size();
+		buffer.allocate(vertexBufferSize + indexBufferSize);
+		buffer.push(skybox.vertices.data(), vertexBufferSize);
+		buffer.push(skybox.indices.data(), indexBufferSize);
+		createVertexIndexBuffer(buffer.data(), vertexBufferSize + indexBufferSize,
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skyboxBuffer);
+
+		//skybox texture load
+		skyboxTexture.load(&devices, "../textures/skybox");
+
 		//render pass
 		renderPass = vktools::createRenderPass(devices.device, { swapchain.surfaceFormat.format }, depthFormat);
+		//descriptor sets
+		createDescriptorSet();
 		//pipeline
 		createPipeline();
 		//framebuffer
@@ -90,9 +116,9 @@ private:
 	/** render pass */
 	VkRenderPass renderPass;
 	/** graphics pipeline */
-	VkPipeline pipeline;
+	VkPipeline pipeline, skyboxPipeline;
 	/** pipeline layout */
-	VkPipelineLayout pipelineLayout;
+	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
 	std::vector<VkFramebuffer> framebuffers;
 	/** descriptor set bindings */
@@ -104,14 +130,18 @@ private:
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
 
-	/** vertex buffer handle */
-	VkBuffer vertexIndexBuffer;
 	/** uniform buffer handle */
 	std::vector<VkBuffer> uniformBuffers;
 	/**  uniform buffer memory handle */
 	std::vector<MemoryAllocator::HostVisibleMemory> uniformBufferMemories;
 	/** abstracted 3d mesh */
-	Mesh mesh;
+	Mesh model, skybox;
+	/** model vertex & index buffer */
+	VkBuffer modelBuffer;
+	/** skybox vertex & index buffer */
+	VkBuffer skyboxBuffer;
+	/** skybox texture */
+	TextureCube skyboxTexture;
 
 	/*
 	* called every frame - submit queues
@@ -145,75 +175,51 @@ private:
 	* create graphics pipeline
 	*/
 	void createPipeline() {
-		auto bindingDescription = mesh.getBindingDescription();
-		auto attributeDescription = mesh.getAttributeDescriptions();
-		
-		VkPipelineVertexInputStateCreateInfo vertexInputInfo
-			= vktools::initializers::pipelineVertexInputStateCreateInfo(&bindingDescription, 1,
-				attributeDescription.data(), static_cast<uint32_t>(attributeDescription.size()));
+		/*
+		* pipeline for main model
+		*/
+		auto bindingDescription = model.getBindingDescription();
+		auto attributeDescription = model.getAttributeDescriptions();
 
-		VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo =
-			vktools::initializers::pipelineInputAssemblyStateCreateInfo();
+		PipelineGenerator gen(devices.device);
+		gen.setColorBlendInfo(VK_FALSE);
+		gen.addVertexInputBindingDescription({ bindingDescription });
+		gen.addVertexInputAttributeDescription(attributeDescription);
+		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
 
-		VkPipelineViewportStateCreateInfo viewportStateInfo =
-			vktools::initializers::pipelineViewportStateCreateInfo();
+		//generate pipeline layout & pipeline
+		gen.generate(renderPass, &pipeline, &pipelineLayout);
+		//reset shader & vertex description settings to reuse pipeline generator
+		gen.resetShaderVertexDescriptions();
 
-		VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-		VkPipelineDynamicStateCreateInfo dynamicStateInfo =
-			vktools::initializers::pipelineDynamicStateCreateInfo(dynamicStates, 2);
 
-		VkPipelineRasterizationStateCreateInfo rasterizationInfo =
-			vktools::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT);
+		/*
+		* pipeline for skybox
+		*/
+		bindingDescription = skybox.getBindingDescription();
+		attributeDescription = skybox.getAttributeDescriptions();
 
-		VkPipelineMultisampleStateCreateInfo multisampleStateInfo =
-			vktools::initializers::pipelineMultisampleStateCreateInfo();
+		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.addVertexInputBindingDescription({ bindingDescription });
+		gen.addVertexInputAttributeDescription(attributeDescription);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
 
-		VkPipelineDepthStencilStateCreateInfo depthStencilStateInfo =
-			vktools::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS);
+		//generate skybox pipeline
+		gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
 
-		VkPipelineColorBlendAttachmentState blendAttachmentState =
-			vktools::initializers::pipelineColorBlendAttachment(VK_FALSE);
-
-		VkPipelineColorBlendStateCreateInfo colorBlendInfo =
-			vktools::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-
-		VkPipelineLayoutCreateInfo pipelineLayoutInfo =
-			vktools::initializers::pipelineLayoutCreateInfo(1, &descriptorSetLayout);
-		VK_CHECK_RESULT(vkCreatePipelineLayout(devices.device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
-
-		//shader
-		VkShaderModule vertexModule = vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_vert.spv"));
-		VkShaderModule fragmentModule = vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_frag.spv"));
-
-		VkPipelineShaderStageCreateInfo vertShaderStageInfo 
-			= vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexModule);
-
-		VkPipelineShaderStageCreateInfo fragShaderStageInfo = 
-			vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentModule);
-
-		VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo , fragShaderStageInfo };
-
-		//pipeline
-		VkGraphicsPipelineCreateInfo pipelineInfo{};
-		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineInfo.stageCount = 2;
-		pipelineInfo.pStages = shaderStages;
-		pipelineInfo.pVertexInputState = &vertexInputInfo;
-		pipelineInfo.pInputAssemblyState = &inputAssemblyInfo;
-		pipelineInfo.pViewportState = &viewportStateInfo;
-		pipelineInfo.pRasterizationState = &rasterizationInfo;
-		pipelineInfo.pMultisampleState = &multisampleStateInfo;
-		pipelineInfo.pDepthStencilState = &depthStencilStateInfo;
-		pipelineInfo.pColorBlendState = &colorBlendInfo;
-		pipelineInfo.pDynamicState = &dynamicStateInfo;
-		pipelineInfo.layout = pipelineLayout;
-		pipelineInfo.renderPass = renderPass;
-		pipelineInfo.subpass = 0;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(devices.device, pipelineCache, 1, &pipelineInfo, nullptr, &pipeline));
-		LOG("created:\tgraphics pipeline");
-		
-		vkDestroyShaderModule(devices.device, vertexModule, nullptr);
-		vkDestroyShaderModule(devices.device, fragmentModule, nullptr);
+		LOG("created:\tgraphics pipelines");
 	}
 
 	/*
@@ -313,17 +319,35 @@ private:
 			//dynamic states
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
+			/*
+			* draw model 
+			*/
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &vertexIndexBuffer, offsets);
-			VkDeviceSize indexBufferOffset = mesh.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(commandBuffers[i], vertexIndexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
 			size_t descriptorSetIndex = i / framebuffers.size();
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &modelBuffer, offsets);
+			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), 1, 0, 0, 0);
+
+			/*
+			* draw skybox
+			*/
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+				&descriptorSets[descriptorSetIndex], 0, nullptr);
+
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skyboxBuffer, offsets);
+			indexBufferOffset = skybox.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], skyboxBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
 			
+			/*
+			* imgui
+			*/
 			imgui.drawFrame(commandBuffers[i], descriptorSetIndex);
 
 			vkCmdEndRenderPass(commandBuffers[i]);
@@ -360,10 +384,12 @@ private:
 		static auto startTime = std::chrono::high_resolution_clock::now();
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
+		
 		UBO ubo{};
-		ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 1.f, 0.f));
-		ubo.view = glm::lookAt(glm::vec3(0.f, 0.f, 4.f), glm::vec3(0.f, 0.5f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
+		glm::vec3 camPos = glm::vec3(4 * std::cos(time), 0, 4 * std::sin(time));
+		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;
@@ -372,13 +398,30 @@ private:
 	}
 
 	/*
+	* set descriptor bindings & allocate destcriptor sets
+	*/
+	void createDescriptorSet() {
+		//descriptor - 1 uniform buffer
+		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		//descriptor - 1 image sampler (skybox)
+		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
+		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
+		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
+	}
+
+	/*
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VkDescriptorBufferInfo bufferInfo{ uniformBuffers[i], 0, sizeof(UBO)};
-			VkWriteDescriptorSet write = bindings.makeWrite(descriptorSets[i], 0, &bufferInfo);
-			vkUpdateDescriptorSets(devices.device, 1, &write, 0, nullptr);
+			std::vector<VkWriteDescriptorSet> writes = {
+				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
+				bindings.makeWrite(descriptorSets[i], 1, &skyboxTexture.descriptor)
+			};
+			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
 	}
 };
