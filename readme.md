@@ -1,8 +1,6 @@
 # DigiPen GAM400 - Vulkan Technical Demo
 This is a realtime 3D rendering application using Vulkan / C++ / GLSL.
 
-<hr style="border:1px solid gray"> </hr>
-
 ### Developing Environments
 -------
 * OS: Windows 10
@@ -12,7 +10,7 @@ This is a realtime 3D rendering application using Vulkan / C++ / GLSL.
 Successful build on other environments is not guaranteed.
 
 ### Third Party
--------
+----------
 * [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 * [stb collection](https://github.com/nothings/stb)
 * [imgui](https://github.com/ocornut/imgui)
