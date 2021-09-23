@@ -20,22 +20,18 @@ A lot of code were based on these great resources:
 * [Nvpro Core from NVIDIA DesignWorks Samples](https://github.com/nvpro-samples/nvpro_core)
 
 ## Updates
-### MSAA - 21/09/16
+## MSAA - 21/09/16
 ![mass_x1](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x1.png)<br>
 ![mass_x8](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x8.png)<br>
 #### Note: It is not recommended to change sample count dynamically (like above) as it results lots of vulkan resource recreation.
 <br>
 
-------
-
-### Skybox & environment (reflection) mapping - 21/09/16
+## Skybox & environment (reflection) mapping - 21/09/16
 ![skybox](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/skybox.gif)<br>
 #### Used skybox textures from: http://www.humus.name/index.php?page=Textures&start=8
 <br>
 
-------
-
-### Initial framework - 21/09/06
+## Initial framework - 21/09/06
 ![initial_framework](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/initial_framework.png)<br>
 #### Initial scene with stanford bunny - simple diffuse light applied <br>
 
