@@ -25,9 +25,13 @@ A lot of code were based on these great resources:
 ![mass_x8](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x8.png)<br>
 <br>
 
+------
+
 #### Skybox & environment (reflection) mapping - 21/09/16
 ![skybox](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/skybox.gif)<br>
 <br>
+
+------
 
 #### Initial framework - 21/09/06
 ![initial_framework](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/initial_framework.png)<br>
