@@ -18,3 +18,8 @@ A lot of code were based on these great resources:
 * [Vulkan tutorial by Alexander Overvoorde](https://vulkan-tutorial.com/Introduction)
 * [Vulkan samples by Sascha Willems](https://github.com/SaschaWillems/Vulkan)
 * [Nvpro Core from NVIDIA DesignWorks Samples](https://github.com/nvpro-samples/nvpro_core)
+
+## Updates
+#### MSAA - 21/09/16
+[mass_x1](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x1.png)<br>
+[mass_x8](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x8.png)<br>
