@@ -237,9 +237,9 @@ void Imgui::createPipeline(VkRenderPass renderPass) {
 	gen.addPushConstantRange({ { VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) } });
 	gen.addVertexInputBindingDescription(vertexInputBinding);
 	gen.addVertexInputAttributeDescription(vertexInputAttributes);
-	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_vert.spv")),
+	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../../core/shaders/imgui_vert.spv")),
 		VK_SHADER_STAGE_VERTEX_BIT);
-	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../core/shaders/imgui_frag.spv")),
+	gen.addShader(vktools::createShaderModule(devices->device, vktools::readFile("../../core/shaders/imgui_frag.spv")),
 		VK_SHADER_STAGE_FRAGMENT_BIT);
 	gen.generate(renderPass, &pipeline, &pipelineLayout);
 }

@@ -29,6 +29,10 @@ public:
 	* destructor - destroy vulkan objects created in this level
 	*/
 	~VulkanApp() {
+		if (devices.device == VK_NULL_HANDLE) {
+			return;
+		}
+
 		imgui.cleanup();
 
 		//descriptor releated resources
@@ -70,15 +74,15 @@ public:
 		VulkanAppBase::initApp();
 
 		//mesh loading & buffer creation
-		model.load("../meshes/bunny.obj");
+		model.load("../../meshes/bunny.obj");
 		modelBuffer = model.createModelBuffer(&devices);
 
 		//skybox model loading & buffer creation
-		skybox.load("../meshes/cube.obj");
+		skybox.load("../../meshes/cube.obj");
 		skyboxBuffer = skybox.createModelBuffer(&devices);
 
 		//skybox texture load
-		skyboxTexture.load(&devices, "../textures/skybox");
+		skyboxTexture.load(&devices, "../../textures/skybox");
 
 		//render pass
 		createRenderPass();
@@ -463,7 +467,7 @@ private:
 		
 		UBO ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
-		glm::vec3 camPos = glm::vec3(3 * std::cos(time / 5), 0, 3 * std::sin(time / 5));
+		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time / 5), 0, 2.5 * std::sin(time / 5));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
@@ -532,4 +536,4 @@ private:
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "Project");
+RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project1");

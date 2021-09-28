@@ -1,5 +1,6 @@
 #include <fstream>
 #include <imgui/imgui.h>
+#include <algorithm>
 #include "vulkan_app_base.h"
 #include "vulkan_debug.h"
 
@@ -27,6 +28,10 @@ VulkanAppBase::VulkanAppBase(int width, int height, const std::string& appName)
 * app destructor
 */
 VulkanAppBase::~VulkanAppBase() {
+	if (devices.device == VK_NULL_HANDLE) {
+		return;
+	}
+
 	destroyMultisampleColorBuffer();
 	destroyDepthStencilImage();
 	devices.memoryAllocator.cleanup();

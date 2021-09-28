@@ -14,11 +14,11 @@
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
     <Filter Include="Source Files\shaders">
-      <UniqueIdentifier>{e657fb69-89a4-45dc-8513-51768deb5c50}</UniqueIdentifier>
+      <UniqueIdentifier>{90199a9c-f9dc-4530-94b7-70561b2cf439}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="project.cpp">
+    <ClCompile Include="project1_skybox_msaa.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -29,16 +29,16 @@
     <None Include="shaders\phong.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
-    <None Include="shaders\skybox.frag">
-      <Filter>Source Files\shaders</Filter>
-    </None>
-    <None Include="shaders\skybox.vert">
-      <Filter>Source Files\shaders</Filter>
-    </None>
     <None Include="shaders\reflection.frag">
       <Filter>Source Files\shaders</Filter>
     </None>
     <None Include="shaders\reflection.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
   </ItemGroup>
