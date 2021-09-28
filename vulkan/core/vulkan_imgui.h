@@ -5,8 +5,8 @@
 /* 
 * Imgui & vulkan integration
 */ 
-class Imgui {
-private:
+class ImguiBase {
+protected:
 	//UI params
 	struct PushConstBlock {
 		glm::vec2 scale;
@@ -31,26 +31,23 @@ private:
 	VulkanDevice* devices								= nullptr;
 
 public:
+	/** @brief destructor */
+	virtual ~ImguiBase(){}
 	/** @brief init context & style & resources */
 	void init(VulkanDevice* devices, int width, int height,
-		VkRenderPass renderPass, uint32_t MAX_FRAMES_IN_FLIGHT);
+		VkRenderPass renderPass, uint32_t MAX_FRAMES_IN_FLIGHT,
+		VkSampleCountFlagBits sampleCount);
 	/** @brief destroy all resources */
 	void cleanup();
 	/** @brief start imgui frame */
-	void newFrame();
+	virtual void newFrame();
 	/** @brief update vertex & index buffer */
 	bool updateBuffers();
 	/** @brief record imgui draw commands */
 	void drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame);
 	/** @brief create pipeline */
-	void createPipeline(VkRenderPass renderPass);
+	void createPipeline(VkRenderPass renderPass, VkSampleCountFlagBits sampleCount);
 
-	/* user input collection */
-	struct UserInput {
-		bool modelRotate = true;
-		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_1_BIT;
-		float camPosZ = 0;
-	} userInput;
-
-	bool sampleCountChanged = false;
+	/** for application update */
+	bool deferCommandBufferRecord = false;
 };

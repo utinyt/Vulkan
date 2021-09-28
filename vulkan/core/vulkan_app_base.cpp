@@ -19,8 +19,9 @@ const bool enableValidationLayer = true;
 * @param height - window height
 * @param appName - application title
 */
-VulkanAppBase::VulkanAppBase(int width, int height, const std::string& appName)
-	: width(width), height(height), appName(appName) {
+VulkanAppBase::VulkanAppBase(int width, int height, const std::string& appName,
+	VkSampleCountFlagBits sampleCount)
+	: width(width), height(height), appName(appName), sampleCount(sampleCount) {
 	enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 }
 
@@ -124,6 +125,10 @@ void VulkanAppBase::initVulkan() {
 
 	swapchain.init(&devices, window);
 	swapchain.create();
+
+	while(sampleCount > static_cast<int32_t>(devices.maxSampleCount)) {
+		sampleCount = static_cast<VkSampleCountFlagBits>(sampleCount / 2);
+	}
 }
 
 /*
@@ -133,8 +138,8 @@ void VulkanAppBase::initApp() {
 	createCommandBuffers();
 	createSyncObjects();
 	createPipelineCache();
-	createDepthStencilImage(imgui.userInput.currentSampleCount);
-	createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
+	createDepthStencilImage(sampleCount);
+	createMultisampleColorBuffer(sampleCount);
 }
 
 /*
@@ -152,10 +157,10 @@ void VulkanAppBase::update() {
 	io.MouseDown[0] = leftPressed;
 	io.MouseDown[1] = rightPressed;
 
-	imgui.newFrame();
+	imguiBase->newFrame();
 	//imgui buffer updated || (mouse hovering imgui window && clicked)
-	if (imgui.updateBuffers() || (ImGui::IsMouseDown(ImGuiMouseButton(0)) && io.WantCaptureKeyboard)) {
-		if (imgui.sampleCountChanged) {
+	if (imguiBase->updateBuffers() || (ImGui::IsMouseDown(ImGuiMouseButton(0)) && io.WantCaptureKeyboard)) {
+		if (imguiBase->deferCommandBufferRecord) {
 			//defer command buffer record
 			return;
 		}
@@ -227,10 +232,10 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 
 	//depth stencil image
 	destroyDepthStencilImage();
-	createDepthStencilImage(imgui.userInput.currentSampleCount);
+	createDepthStencilImage(sampleCount);
 	//multisample color buffer
 	destroyMultisampleColorBuffer();
-	createMultisampleColorBuffer(imgui.userInput.currentSampleCount);
+	createMultisampleColorBuffer(sampleCount);
 
 	//framebuffer
 	createFramebuffers();
@@ -238,7 +243,7 @@ void VulkanAppBase::resizeWindow(bool recordCmdBuf) {
 	//imgui displat size update
 	ImGuiIO& io = ImGui::GetIO();
 	io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
-	imgui.updateBuffers();
+	imguiBase->updateBuffers();
 
 	//command buffers
 	destroyCommandBuffers();

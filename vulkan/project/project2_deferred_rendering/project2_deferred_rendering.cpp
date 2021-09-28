@@ -1,6 +1,5 @@
 #include <array>
 #include <chrono>
-#include <string>
 #include <include/imgui/imgui.h>
 #include "core/vulkan_app_base.h"
 #include "core/vulkan_mesh.h"
@@ -17,18 +16,6 @@ public:
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
-		ImGui::Text("MSAA");
-		static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_1_BIT;
-		for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
-			std::string buttonStr = "x" + std::to_string(sampleCount);
-			ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);
-			ImGui::SameLine();
-		}
-		if (count != userInput.currentSampleCount) {
-			userInput.currentSampleCount = count;
-			sampleCountChanged = true;
-			deferCommandBufferRecord = true;
-		}
 
 		ImGui::End();
 		ImGui::Render();
@@ -36,10 +23,8 @@ public:
 
 	/* user input collection */
 	struct UserInput {
-		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_1_BIT;
+		
 	} userInput;
-
-	bool sampleCountChanged = false;
 };
 
 class VulkanApp : public VulkanAppBase {
@@ -56,7 +41,7 @@ public:
 	* constructor - get window size & title
 	*/
 	VulkanApp(int width, int height, const std::string& appName)
-		: VulkanAppBase(width, height, appName, VK_SAMPLE_COUNT_1_BIT) {
+		: VulkanAppBase(width, height, appName, VK_SAMPLE_COUNT_8_BIT) {
 		imguiBase = new Imgui;
 	}
 
@@ -82,14 +67,9 @@ public:
 			vkDestroyBuffer(devices.device, uniformBuffers[i], nullptr);
 		}
 
-		//skybox textures
-		skyboxTexture.cleanup();
-		
 		//model & skybox buffers
 		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
-		devices.memoryAllocator.freeBufferMemory(skyboxBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, skyboxBuffer, nullptr);
 
 		//framebuffers
 		for (auto& framebuffer : framebuffers) {
@@ -97,7 +77,6 @@ public:
 		}
 
 		//pipelines & render pass
-		vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 		vkDestroyPipeline(devices.device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
@@ -112,13 +91,6 @@ public:
 		//mesh loading & buffer creation
 		model.load("../../meshes/bunny.obj");
 		modelBuffer = model.createModelBuffer(&devices);
-
-		//skybox model loading & buffer creation
-		skybox.load("../../meshes/cube.obj");
-		skyboxBuffer = skybox.createModelBuffer(&devices);
-
-		//skybox texture load
-		skyboxTexture.load(&devices, "../../textures/skybox");
 
 		//render pass
 		createRenderPass();
@@ -143,7 +115,7 @@ private:
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE;
+	VkPipeline pipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
@@ -167,10 +139,6 @@ private:
 	Mesh model, skybox;
 	/** model vertex & index buffer */
 	VkBuffer modelBuffer;
-	/** skybox vertex & index buffer */
-	VkBuffer skyboxBuffer;
-	/** skybox texture */
-	TextureCube skyboxTexture;
 
 	/*
 	* called every frame - submit queues
@@ -200,16 +168,6 @@ private:
 	*/
 	void update() override {
 		VulkanAppBase::update();
-
-		//imgui update
-		if (Imgui* imgui = static_cast<Imgui*>(imguiBase); imgui->sampleCountChanged == true) {
-			imgui->sampleCountChanged = false;
-			imgui->deferCommandBufferRecord = false;
-			sampleCount = imgui->userInput.currentSampleCount;
-			changeMultisampleResources();
-		}
-
-		//uniform buffer
 		updateUniformBuffer(currentFrame);
 	}
 
@@ -309,10 +267,8 @@ private:
 	void createPipeline() {
 		if (pipeline != VK_NULL_HANDLE) {
 			vkDestroyPipeline(devices.device, pipeline, nullptr);
-			vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 			vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 			pipeline = VK_NULL_HANDLE;
-			skyboxPipeline = VK_NULL_HANDLE;
 			pipelineLayout = VK_NULL_HANDLE;
 		}
 
@@ -329,38 +285,16 @@ private:
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_vert.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
 		//reset shader & vertex description settings to reuse pipeline generator
 		gen.resetShaderVertexDescriptions();
-
-
-		/*
-		* pipeline for skybox
-		*/
-		bindingDescription = skybox.getBindingDescription();
-		attributeDescription = skybox.getAttributeDescriptions();
-
-		gen.setMultisampleInfo(sampleCount, VK_TRUE, 0.2f);
-		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
-		gen.addVertexInputBindingDescription({ bindingDescription });
-		gen.addVertexInputAttributeDescription(attributeDescription);
-		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
-			VK_SHADER_STAGE_VERTEX_BIT);
-		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
-			VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		//generate skybox pipeline
-		gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -451,18 +385,6 @@ private:
 			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
 			vkCmdBindIndexBuffer(commandBuffers[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
 			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), 1, 0, 0, 0);
-
-			/*
-			* draw skybox
-			*/
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-				&descriptorSets[descriptorSetIndex], 0, nullptr);
-
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skyboxBuffer, offsets);
-			indexBufferOffset = skybox.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(commandBuffers[i], skyboxBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
 			
 			/*
 			* imgui
@@ -522,8 +444,6 @@ private:
 	void createDescriptorSet() {
 		//descriptor - 1 uniform buffer
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		//descriptor - 1 image sampler (skybox)
-		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -538,41 +458,11 @@ private:
 			VkDescriptorBufferInfo bufferInfo{ uniformBuffers[i], 0, sizeof(UBO)};
 			std::vector<VkWriteDescriptorSet> writes = {
 				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
-				bindings.makeWrite(descriptorSets[i], 1, &skyboxTexture.descriptor)
 			};
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
 	}
-
-	/*
-	* change all resource related to multusampling
-	*/
-	void changeMultisampleResources() {
-		//finish all command before destroy vk resources
-		vkDeviceWaitIdle(devices.device);
-
-		//depth stencil image
-		destroyDepthStencilImage();
-		createDepthStencilImage(sampleCount);
-		//multisample color buffer
-		destroyMultisampleColorBuffer();
-		createMultisampleColorBuffer(sampleCount);
-
-		//render pass
-		createRenderPass();
-		//pipeline
-		createPipeline();
-		//framebuffer
-		createFramebuffers();
-
-		//imgui pipeline
-		imguiBase->createPipeline(renderPass, sampleCount);
-
-		//command buffer
-		resetCommandBuffer();
-		recordCommandBuffer();
-	}
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project1");
+RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project2");

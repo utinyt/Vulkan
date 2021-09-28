@@ -6,7 +6,8 @@
 
 class VulkanAppBase {
 public:
-	VulkanAppBase(int width, int height, const std::string& appName);
+	VulkanAppBase(int width, int height, const std::string& appName,
+		VkSampleCountFlagBits sampleCount);
 	virtual ~VulkanAppBase();
 
 	void init();
@@ -43,7 +44,7 @@ protected:
 	/** glfw mouse pressed */
 	bool leftPressed = false, rightPressed = false;
 	/** imgui vulkan integration */
-	Imgui imgui;
+	ImguiBase* imguiBase = nullptr;
 	/** application title */
 	std::string appName;
 	/** list of enalbed (required) instance extensions */
@@ -86,6 +87,8 @@ protected:
 	VkImage multisampleColorImage = VK_NULL_HANDLE;
 	/** multisample color image view*/
 	VkImageView multisampleColorImageView = VK_NULL_HANDLE;
+	/** image sample count */
+	VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
 
 private:
 	void initWindow();

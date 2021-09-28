@@ -10,6 +10,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "project1_skybox_msaa", "pro
 		{83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD} = {83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "project2_deferred_rendering", "project\project2_deferred_rendering\project2_deferred_rendering.vcxproj", "{D2027585-9917-4EBE-AB63-4CDB23A3E8E1}"
+	ProjectSection(ProjectDependencies) = postProject
+		{83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD} = {83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -24,6 +29,10 @@ Global
 		{8E8AFE97-ACDD-492A-AD39-96FAF6A0B06B}.Debug|x64.Build.0 = Debug|x64
 		{8E8AFE97-ACDD-492A-AD39-96FAF6A0B06B}.Release|x64.ActiveCfg = Release|x64
 		{8E8AFE97-ACDD-492A-AD39-96FAF6A0B06B}.Release|x64.Build.0 = Release|x64
+		{D2027585-9917-4EBE-AB63-4CDB23A3E8E1}.Debug|x64.ActiveCfg = Debug|x64
+		{D2027585-9917-4EBE-AB63-4CDB23A3E8E1}.Debug|x64.Build.0 = Debug|x64
+		{D2027585-9917-4EBE-AB63-4CDB23A3E8E1}.Release|x64.ActiveCfg = Release|x64
+		{D2027585-9917-4EBE-AB63-4CDB23A3E8E1}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

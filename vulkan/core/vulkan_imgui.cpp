@@ -10,8 +10,8 @@
 * 
 * @param devices - abstracted vulkan device (physical / logical) pointer
 */
-void Imgui::init(VulkanDevice* devices, int width, int height,
-	VkRenderPass renderPass, uint32_t MAX_FRAMES_IN_FLIGHT) {
+void ImguiBase::init(VulkanDevice* devices, int width, int height,
+	VkRenderPass renderPass, uint32_t MAX_FRAMES_IN_FLIGHT, VkSampleCountFlagBits sampleCount) {
 	this->devices = devices;
 	ImGui::CreateContext();
 
@@ -53,7 +53,7 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 	vkUpdateDescriptorSets(devices->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
 	//create render pass
-	createPipeline(renderPass);
+	createPipeline(renderPass, sampleCount);
 
 	//build first frame
 	newFrame();
@@ -63,7 +63,7 @@ void Imgui::init(VulkanDevice* devices, int width, int height,
 /*
 * destroy all resources
 */
-void Imgui::cleanup() {
+void ImguiBase::cleanup() {
 	if (devices == nullptr) {
 		return;
 	}
@@ -85,22 +85,9 @@ void Imgui::cleanup() {
 /*
 * start  imgui frame
 */
-void Imgui::newFrame() {
+void ImguiBase::newFrame() {
 	ImGui::NewFrame();
 	ImGui::Begin("Setting");
-	
-	ImGui::Text("MSAA");
-	static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_1_BIT;
-	for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
-		std::string buttonStr = "x" + std::to_string(sampleCount);
-		ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);
-		ImGui::SameLine();
-	}
-	if (count != userInput.currentSampleCount) {
-		userInput.currentSampleCount = count;
-		sampleCountChanged = true;
-	}
-
 	ImGui::End();
 	ImGui::Render();
 }
@@ -110,7 +97,7 @@ void Imgui::newFrame() {
 * 
 * @return bool - buffer recreated?
 */
-bool Imgui::updateBuffers() {
+bool ImguiBase::updateBuffers() {
 	bool bufferRecreated= false;
 	ImDrawData* imDrawData = ImGui::GetDrawData();
 
@@ -164,7 +151,7 @@ bool Imgui::updateBuffers() {
 * @param cmdBuf - command buffer to record
 * @param currentFrame - index of descriptor set (0 <= currentFrame < MAX_FRAMES_IN_FLIGHT)
 */
-void Imgui::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
+void ImguiBase::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
 	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -209,7 +196,7 @@ void Imgui::drawFrame(VkCommandBuffer cmdBuf, size_t currentFrame) {
 /*
 * create graphics pipeline for imgui 
 */
-void Imgui::createPipeline(VkRenderPass renderPass) {
+void ImguiBase::createPipeline(VkRenderPass renderPass, VkSampleCountFlagBits sampleCount) {
 	if (pipeline != VK_NULL_HANDLE) {
 		vkDestroyPipeline(devices->device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices->device, pipelineLayout, nullptr);
@@ -232,7 +219,7 @@ void Imgui::createPipeline(VkRenderPass renderPass) {
 	gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
 	gen.setColorBlendInfo(VK_TRUE);
 	gen.setDepthStencilInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
-	gen.setMultisampleInfo(userInput.currentSampleCount);
+	gen.setMultisampleInfo(sampleCount);
 	gen.addDescriptorSetLayout({ descriptorSetLayout });
 	gen.addPushConstantRange({ { VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstBlock) } });
 	gen.addVertexInputBindingDescription(vertexInputBinding);
