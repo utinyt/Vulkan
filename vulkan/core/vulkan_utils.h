@@ -53,23 +53,22 @@ namespace vktools {
 	/** @brief return suitable image format */
 	VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates,
 		VkImageTiling tiling, VkFormatFeatureFlags features);
+	/** @brief check if the format has depth component */
+	bool hasDepthComponent(VkFormat format);
 	/** @brief check if the format has stencil component */
 	bool hasStencilComponent(VkFormat format);
 	/** @brief create renderpass */
 	VkRenderPass createRenderPass(VkDevice device,
 		const std::vector<VkFormat>& colorAttachmentFormats,
 		VkFormat depthAttachmentFormat,
+		VkSampleCountFlagBits sampleCount,
 		uint32_t subpassCount = 1,
 		bool clearColor = true,
 		bool clearDepth = true,
 		VkImageLayout initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		VkImageLayout finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		VkPipelineStageFlags stageFlags = 
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-		VkAccessFlags dstAccessMask = 
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | 
-			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+		VkPipelineStageFlags stageFlags = 0,
+		VkAccessFlags dstAccessMask = 0);
 	/** @brief allocate descriptor sets */
 	std::vector<VkDescriptorSet> allocateDescriptorSets(VkDevice device, VkDescriptorSetLayout layout,
 		VkDescriptorPool pool, uint32_t nbDescriptors);

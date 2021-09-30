@@ -285,7 +285,7 @@ MemoryAllocator::HostVisibleMemory VulkanDevice::createBuffer(VkBuffer& buffer, 
 
 void VulkanDevice::copyBuffer(VkCommandPool commandPool, VkBuffer srcBuffer, VkBuffer dstBuffer,
 	VkDeviceSize size) const {
-	VkCommandBuffer commandBuffer = beginOneTimeSubmitCommandBuffer();
+	VkCommandBuffer commandBuffer = beginCommandBuffer();
 
 	//copy buffer
 	VkBufferCopy copyRegion{};
@@ -294,7 +294,7 @@ void VulkanDevice::copyBuffer(VkCommandPool commandPool, VkBuffer srcBuffer, VkB
 	copyRegion.size = size;
 	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-	endOneTimeSubmitCommandBuffer(commandBuffer);
+	endCommandBuffer(commandBuffer);
 }
 
 /*
@@ -324,7 +324,7 @@ MemoryAllocator::HostVisibleMemory VulkanDevice::createImage(VkImage& image,
 
 void VulkanDevice::copyBufferToImage(VkBuffer buffer, VkImage image,
 	VkOffset3D offset, VkExtent3D extent) const {
-	VkCommandBuffer commandBuffer = beginOneTimeSubmitCommandBuffer();
+	VkCommandBuffer commandBuffer = beginCommandBuffer();
 	
 	VkBufferImageCopy region{};
 	region.bufferOffset = 0;
@@ -346,7 +346,7 @@ void VulkanDevice::copyBufferToImage(VkBuffer buffer, VkImage image,
 		&region
 	);
 
-	endOneTimeSubmitCommandBuffer(commandBuffer);
+	endCommandBuffer(commandBuffer);
 }
 
 /*
@@ -354,7 +354,7 @@ void VulkanDevice::copyBufferToImage(VkBuffer buffer, VkImage image,
 * 
 * @return command buffer ready to be recorded
 */
-VkCommandBuffer VulkanDevice::beginOneTimeSubmitCommandBuffer() const {
+VkCommandBuffer VulkanDevice::beginCommandBuffer(VkCommandBufferUsageFlagBits flag) const {
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -366,7 +366,7 @@ VkCommandBuffer VulkanDevice::beginOneTimeSubmitCommandBuffer() const {
 
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	beginInfo.flags = flag;
 	VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
 	return commandBuffer;
@@ -378,7 +378,7 @@ VkCommandBuffer VulkanDevice::beginOneTimeSubmitCommandBuffer() const {
 * 
 * @param commandBuffer - recorded command buffer to submit
 */
-void VulkanDevice::endOneTimeSubmitCommandBuffer(VkCommandBuffer commandBuffer) const {
+void VulkanDevice::endCommandBuffer(VkCommandBuffer commandBuffer) const {
 	vkEndCommandBuffer(commandBuffer);
 
 	VkSubmitInfo submitInfo{};

@@ -148,14 +148,34 @@ namespace vktools {
 	}
 
 	/*
-	* check if the format has stencil component
+	* check if the format has depth component (D)
+	* 
+	* @param format
+	* @return bool
+	*/
+	bool hasDepthComponent(VkFormat format) {
+		return
+			format == VK_FORMAT_D16_UNORM ||
+			format == VK_FORMAT_X8_D24_UNORM_PACK32 ||
+			format == VK_FORMAT_D32_SFLOAT ||
+			format == VK_FORMAT_D16_UNORM_S8_UINT ||
+			format == VK_FORMAT_D24_UNORM_S8_UINT ||
+			format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+		
+	}
+
+	/*
+	* check if the format has stencil component (S)
 	* 
 	* @param format
 	* @return bool
 	*/
 	bool hasStencilComponent(VkFormat format) {
-		return format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
-			format == VK_FORMAT_D24_UNORM_S8_UINT;
+		return
+			format == VK_FORMAT_S8_UINT				||
+			format == VK_FORMAT_D16_UNORM_S8_UINT	||
+			format == VK_FORMAT_D24_UNORM_S8_UINT	||
+			format == VK_FORMAT_D32_SFLOAT_S8_UINT;
 	}
 
 	/*
@@ -173,6 +193,7 @@ namespace vktools {
 	VkRenderPass createRenderPass(VkDevice	device,
 		const std::vector<VkFormat>&		colorAttachmentFormats, 
 		VkFormat							depthAttachmentFormat,
+		VkSampleCountFlagBits				sampleCount,
 		uint32_t							subpassCount, 
 		bool								clearColor, 
 		bool								clearDepth, 
@@ -180,15 +201,17 @@ namespace vktools {
 		VkImageLayout						finalLayout,
 		VkPipelineStageFlags				stageFlags,
 		VkAccessFlags						dstAccessMask) {
+
 		std::vector<VkAttachmentDescription> allAttachments;
 		std::vector<VkAttachmentReference> colorAttachmentsRef;
 		bool hasDepth = (depthAttachmentFormat != VK_FORMAT_UNDEFINED);
+		bool multisampling = sampleCount != VK_SAMPLE_COUNT_1_BIT;
 
 		//color attachments
 		for (const auto& format : colorAttachmentFormats) {
 			VkAttachmentDescription colorAttachment{};
 			colorAttachment.format			= format;
-			colorAttachment.samples			= VK_SAMPLE_COUNT_1_BIT;
+			colorAttachment.samples			= sampleCount;
 			colorAttachment.loadOp			= clearColor ?
 												VK_ATTACHMENT_LOAD_OP_CLEAR : (initialLayout == VK_IMAGE_LAYOUT_UNDEFINED ?
 													VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD);
@@ -211,7 +234,7 @@ namespace vktools {
 		if (hasDepth) {
 			VkAttachmentDescription depthAttachment{};
 			depthAttachment.format			= depthAttachmentFormat;
-			depthAttachment.samples			= VK_SAMPLE_COUNT_1_BIT;
+			depthAttachment.samples			= sampleCount;
 			depthAttachment.loadOp			= clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			depthAttachment.storeOp			= VK_ATTACHMENT_STORE_OP_STORE;
 			depthAttachment.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -223,6 +246,22 @@ namespace vktools {
 			depthAttachmentRef.layout		= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			 
 			allAttachments.push_back(depthAttachment);
+		}
+
+		//multisample color attachment
+		VkAttachmentReference multisampleColorRef{};
+		if (multisampling) {
+			VkAttachmentDescription multisampleAttachment{};
+			multisampleAttachment.format;
+			multisampleAttachment.samples			= sampleCount;
+			multisampleAttachment.loadOp			= VK_ATTACHMENT_LOAD_OP_CLEAR;
+			multisampleAttachment.storeOp			= VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			multisampleAttachment.stencilLoadOp		= VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			multisampleAttachment.stencilStoreOp	= VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			multisampleAttachment.initialLayout		= VK_IMAGE_LAYOUT_UNDEFINED;
+			multisampleAttachment.finalLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			multisampleColorRef.attachment			= static_cast<uint32_t>(allAttachments.size());
+			multisampleColorRef.layout				= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
 
 		//subpass dependency

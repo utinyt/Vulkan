@@ -82,6 +82,12 @@
   <ItemGroup>
     <ClCompile Include="project2_deferred_rendering.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\full_quad.frag" />
+    <None Include="shaders\full_quad.vert" />
+    <None Include="shaders\gbuffer.frag" />
+    <None Include="shaders\gbuffer.vert" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

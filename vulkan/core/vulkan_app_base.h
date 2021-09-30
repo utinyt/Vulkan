@@ -7,7 +7,7 @@
 class VulkanAppBase {
 public:
 	VulkanAppBase(int width, int height, const std::string& appName,
-		VkSampleCountFlagBits sampleCount);
+		VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT);
 	virtual ~VulkanAppBase();
 
 	void init();

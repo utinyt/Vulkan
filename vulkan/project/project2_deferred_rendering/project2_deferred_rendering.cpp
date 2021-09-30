@@ -9,6 +9,7 @@
 #include "core/vulkan_imgui.h"
 #include "core/vulkan_texture.h"
 #include "core/vulkan_pipeline.h"
+#include "core/vulkan_framebuffer.h"
 
 class Imgui : public ImguiBase {
 public:
@@ -41,7 +42,7 @@ public:
 	* constructor - get window size & title
 	*/
 	VulkanApp(int width, int height, const std::string& appName)
-		: VulkanAppBase(width, height, appName, VK_SAMPLE_COUNT_8_BIT) {
+		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
 	}
 
@@ -59,6 +60,8 @@ public:
 		//descriptor releated resources
 		vkDestroyDescriptorPool(devices.device, descriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, offscreenDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, offscreenDescriptorSetLayout, nullptr);
 
 		//uniform buffers
 		for (size_t i = 0; i < uniformBuffers.size(); ++i) {
@@ -79,21 +82,45 @@ public:
 		//pipelines & render pass
 		vkDestroyPipeline(devices.device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, offscreenPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, offscreenPipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
+		vkDestroyRenderPass(devices.device, offscreenRenderPass, nullptr);
+		offscreenFramebuffer.cleanup();
+		vkDestroySampler(devices.device, offscreenSampler, nullptr);
+
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vkDestroySemaphore(devices.device, offscreenSemaphores[i], nullptr);
+		}
 	}
 
 	/*
 	* application initialization - also contain base class initApp()
 	*/
 	virtual void initApp() override {
+		//sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 		VulkanAppBase::initApp();
 
 		//mesh loading & buffer creation
 		model.load("../../meshes/bunny.obj");
 		modelBuffer = model.createModelBuffer(&devices);
 
+		//offscreen resources
+		createOffscreenRenderPassFramebuffer();
+		//offscreen semaphore
+		createOffscreenSemaphores();
+
 		//render pass
-		createRenderPass();
+		renderPass = vktools::createRenderPass(devices.device,
+			{swapchain.surfaceFormat.format},
+			depthFormat,
+			VK_SAMPLE_COUNT_1_BIT,
+			1,
+			true, true,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
 		//descriptor sets
 		createDescriptorSet();
 		//pipeline
@@ -109,6 +136,8 @@ public:
 			renderPass, MAX_FRAMES_IN_FLIGHT, sampleCount);
 		//record command buffer
 		recordCommandBuffer();
+		//create & record offscreen command buffer
+		createOffscreenCommandBuffer();
 	}
 
 private:
@@ -140,13 +169,38 @@ private:
 	/** model vertex & index buffer */
 	VkBuffer modelBuffer;
 
+	/** offscreen framebuffer */
+	Framebuffer offscreenFramebuffer;
+	/** offscreen render pass */
+	VkRenderPass offscreenRenderPass = VK_NULL_HANDLE;
+	/** offscreen sampler */
+	VkSampler offscreenSampler = VK_NULL_HANDLE;
+	/** offscreen render semaphores */
+	std::vector<VkSemaphore> offscreenSemaphores;
+	/** offscreen command buffer */
+	std::vector<VkCommandBuffer> offscreenCmdBuf{};
+	/** offscreen pipeline */
+	VkPipeline offscreenPipeline = VK_NULL_HANDLE;
+	/** offscreen pipeline layout */
+	VkPipelineLayout offscreenPipelineLayout = VK_NULL_HANDLE;
+	/** descriptor set bindings */
+	DescriptorSetBindings offscreenBindings;
+	/** descriptor layout */
+	VkDescriptorSetLayout offscreenDescriptorSetLayout;
+	/** descriptor pool */
+	VkDescriptorPool offscreenDescriptorPool;
+	/** descriptor sets */
+	std::vector<VkDescriptorSet> offscreenDescriptorSets;
+
 	/*
 	* called every frame - submit queues
 	*/
 	virtual void draw() override {
 		uint32_t imageIndex = prepareFrame();
 
-		//render
+		/*
+		* offscreen rendering
+		*/
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -154,9 +208,17 @@ private:
 		submitInfo.pWaitSemaphores = &presentCompleteSemaphores[currentFrame];
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &offscreenCmdBuf[currentFrame];
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = &offscreenSemaphores[currentFrame];
+		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
+
+		/*
+		* post rendering
+		*/
+		submitInfo.pWaitSemaphores = &offscreenSemaphores[currentFrame];
 		size_t commandBufferIndex = currentFrame * framebuffers.size() + imageIndex;
 		submitInfo.pCommandBuffers = &commandBuffers[commandBufferIndex];
-		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = &renderCompleteSemaphores[currentFrame];
 		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, frameLimitFences[currentFrame]));
 
@@ -171,94 +233,100 @@ private:
 		updateUniformBuffer(currentFrame);
 	}
 
+	void createOffscreenRenderPassFramebuffer() {
+		offscreenFramebuffer.init(&devices);
+
+		VkMemoryPropertyFlagBits memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+		//position
+		VkImageCreateInfo attachmentInfo = vktools::initializers::imageCreateInfo(
+			{ swapchain.extent.width, swapchain.extent.height, 1 },
+			VK_FORMAT_R16G16B16A16_SFLOAT,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			sampleCount
+		);
+		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
+
+		//normal - use same info
+		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
+
+		//depth
+		attachmentInfo.format = depthFormat;
+		attachmentInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
+
+		//sampler
+		VkSamplerCreateInfo samplerInfo = 
+			vktools::initializers::samplerCreateInfo(devices.availableFeatures, devices.properties, VK_FILTER_NEAREST);
+		VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
+
+		offscreenRenderPass = offscreenFramebuffer.createRenderPass();
+		offscreenFramebuffer.createFramebuffer(swapchain.extent, offscreenRenderPass);
+	}
+
 	/*
-	* create render pass
+	* create offscreen semaphores
 	*/
-	void createRenderPass() {
-		if (renderPass != VK_NULL_HANDLE) {
-			vkDestroyRenderPass(devices.device, renderPass, nullptr);
+	void createOffscreenSemaphores() {
+		offscreenSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		VkSemaphoreCreateInfo info{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			VK_CHECK_RESULT(vkCreateSemaphore(devices.device, &info, nullptr, &offscreenSemaphores[i]));
 		}
+	}
 
-		bool isCurrentSampleCount1 = sampleCount == VK_SAMPLE_COUNT_1_BIT;
+	/*
+	* create & record offscreen command buffer
+	*/
+	void createOffscreenCommandBuffer() {
+		std::vector<VkClearValue> clearValues{};
+		clearValues.resize(3);
+		clearValues[0].color = clearColor;
+		clearValues[1].color = clearColor;
+		clearValues[2].depthStencil = {1.f, 0};
+		clearValues.shrink_to_fit();
 
-		std::vector<VkAttachmentDescription> attachments{};
-		if (isCurrentSampleCount1) {
-			attachments.resize(2); //present + depth
+		VkRenderPassBeginInfo offscreenRenderPassBeginInfo{};
+		offscreenRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		offscreenRenderPassBeginInfo.renderPass = offscreenRenderPass;
+		offscreenRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		offscreenRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		offscreenRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+		offscreenRenderPassBeginInfo.pClearValues = clearValues.data();
+		offscreenRenderPassBeginInfo.framebuffer = offscreenFramebuffer.framebuffer;
+
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandPool = devices.commandPool;
+		allocInfo.commandBufferCount = 2;
+		offscreenCmdBuf.resize(MAX_FRAMES_IN_FLIGHT);
+
+		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &allocInfo, offscreenCmdBuf.data()));
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			VK_CHECK_RESULT(vkBeginCommandBuffer(offscreenCmdBuf[i], &beginInfo));
+
+			vkCmdBeginRenderPass(offscreenCmdBuf[i], &offscreenRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(offscreenCmdBuf[i], swapchain.extent);
+
+			vkCmdBindPipeline(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
+			vkCmdBindDescriptorSets(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, 
+				0, 1, &offscreenDescriptorSets[i], 0, nullptr);
+
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 0, 1, &modelBuffer, offsets);
+			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(offscreenCmdBuf[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(offscreenCmdBuf[i], static_cast<uint32_t>(model.indices.size()), 1, 0, 0, 0);
+
+			vkCmdEndRenderPass(offscreenCmdBuf[i]);
+			VK_CHECK_RESULT(vkEndCommandBuffer(offscreenCmdBuf[i]));
 		}
-		else {
-			attachments.resize(3); //present + depth + multisample color buffer
-		}
-
-		//swapchain present attachment
-		attachments[0].format = swapchain.surfaceFormat.format;
-		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		attachments[0].loadOp = isCurrentSampleCount1 ? 
-			VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		VkAttachmentReference resolveRef{};
-		resolveRef.attachment = 0;
-		resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		//depth attachment
-		attachments[1].format = depthFormat;
-		attachments[1].samples = sampleCount;
-		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		VkAttachmentReference depthRef{};
-		depthRef.attachment = 1;
-		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference colorRef{};
-		if (!isCurrentSampleCount1) {
-			//multisample color attachment
-			attachments[2].format = swapchain.surfaceFormat.format;
-			attachments[2].samples = sampleCount;
-			attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			attachments[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			colorRef.attachment = 2;
-			colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
-		
-		//subpass
-		VkSubpassDescription subpass{};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = isCurrentSampleCount1 ? &resolveRef : &colorRef;
-		subpass.pDepthStencilAttachment = &depthRef;
-		subpass.pResolveAttachments = isCurrentSampleCount1 ? nullptr : &resolveRef;
-
-		//subpass dependency
-		VkSubpassDependency dependency{};
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.srcAccessMask = 0;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-		//create renderpass
-		VkRenderPassCreateInfo renderPassInfo{};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		renderPassInfo.pAttachments = attachments.data();
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
-		renderPassInfo.dependencyCount = 1;
-		renderPassInfo.pDependencies = &dependency;
-
-		VK_CHECK_RESULT(vkCreateRenderPass(devices.device, &renderPassInfo, nullptr, &renderPass));
 	}
 
 	/*
@@ -273,28 +341,45 @@ private:
 		}
 
 		/*
-		* pipeline for main model
+		* offscreen pipeline (g-buffer)
 		*/
 		auto bindingDescription = model.getBindingDescription();
 		auto attributeDescription = model.getAttributeDescriptions();
 
 		PipelineGenerator gen(devices.device);
-		gen.setColorBlendInfo(VK_FALSE);
+		gen.setColorBlendInfo(VK_FALSE, 2);
 		gen.setMultisampleInfo(sampleCount);
 		gen.addVertexInputBindingDescription({ bindingDescription });
 		gen.addVertexInputAttributeDescription(attributeDescription);
-		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addDescriptorSetLayout({ offscreenDescriptorSetLayout });
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_vert.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/gbuffer_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/phong_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/gbuffer_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+
+		//generate pipeline layout & pipeline
+		gen.generate(offscreenRenderPass, &offscreenPipeline, &offscreenPipelineLayout);
+		//reset generator
+		gen.resetAll();
+
+		/*
+		* full screen quad pipeline
+		*/
+		gen.setColorBlendInfo(VK_FALSE, 1);
+		gen.setMultisampleInfo(VK_SAMPLE_COUNT_1_BIT);
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
-		//reset shader & vertex description settings to reuse pipeline generator
-		gen.resetShaderVertexDescriptions();
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -312,11 +397,6 @@ private:
 			std::vector<VkImageView> attachments;
 			attachments.push_back(swapchain.imageViews[i]);
 			attachments.push_back(depthImageView);
-
-			if (sampleCount != VK_SAMPLE_COUNT_1_BIT) {
-				attachments.push_back(multisampleColorImageView);
-			}
-
 			attachments.shrink_to_fit();
 
 			VkFramebufferCreateInfo framebufferInfo{};
@@ -340,17 +420,9 @@ private:
 		cmdBufBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
 		std::vector<VkClearValue> clearValues{};
-		if (sampleCount == VK_SAMPLE_COUNT_1_BIT) {
-			clearValues.resize(2);
-			clearValues[0].color = clearColor;
-			clearValues[1].depthStencil = { 1.f, 0 };
-		}
-		else {
-			clearValues.resize(3);
-			clearValues[0].color = clearColor;
-			clearValues[1].depthStencil = { 1.f, 0 };
-			clearValues[2].color = clearColor;
-		}
+		clearValues.resize(2);
+		clearValues[0].color = clearColor;
+		clearValues[1].depthStencil = { 1.f, 0 };
 
 		clearValues.shrink_to_fit();
 
@@ -373,18 +445,14 @@ private:
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
 			/*
-			* draw model 
+			* draw full screen quad
 			*/
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 			size_t descriptorSetIndex = i / framebuffers.size();
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &modelBuffer, offsets);
-			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(commandBuffers[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), 1, 0, 0, 0);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			
 			/*
 			* imgui
@@ -442,8 +510,21 @@ private:
 	* set descriptor bindings & allocate destcriptor sets
 	*/
 	void createDescriptorSet() {
-		//descriptor - 1 uniform buffer
-		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		/*
+		* offscreen descriptor
+		*/
+		//descriptor - camera matrices
+		offscreenBindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		offscreenDescriptorPool = offscreenBindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
+		offscreenDescriptorSetLayout = offscreenBindings.createDescriptorSetLayout(devices.device);
+		offscreenDescriptorSets = vktools::allocateDescriptorSets(devices.device, offscreenDescriptorSetLayout, offscreenDescriptorPool, MAX_FRAMES_IN_FLIGHT);
+
+		/*
+		* full-screen quad descriptor
+		*/
+		//descriptor - 2 image samplers
+		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -453,11 +534,17 @@ private:
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
-
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VkDescriptorBufferInfo bufferInfo{ uniformBuffers[i], 0, sizeof(UBO)};
+			VkDescriptorImageInfo posAttachmentInfo{offscreenSampler, 
+				offscreenFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			VkDescriptorImageInfo normalAttachmentInfo{ offscreenSampler, 
+				offscreenFramebuffer.attachments[1].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
 			std::vector<VkWriteDescriptorSet> writes = {
-				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
+				offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &bufferInfo),
+				bindings.makeWrite(descriptorSets[i], 0, &posAttachmentInfo),
+				bindings.makeWrite(descriptorSets[i], 1, &normalAttachmentInfo),
 			};
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}

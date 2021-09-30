@@ -30,7 +30,7 @@ public:
 		VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT,
 		VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE);
 	/** @brief (re)set color blend info */
-	void setColorBlendInfo(VkBool32 blendEnable);
+	void setColorBlendInfo(VkBool32 blendEnable, uint32_t nbColorAttachment = 1);
 	/** @brief (re)set depth stencil state info */
 	void setDepthStencilInfo(VkBool32 depthTest = VK_TRUE, VkBool32 depthWrite = VK_TRUE,
 		VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS);

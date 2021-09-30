@@ -76,7 +76,7 @@ void Texture2D::load(VulkanDevice* devices, unsigned char* data,
 	hostVisibleMemory.mapData(devices->device, data);
 
 	//image transfer
-	VkCommandBuffer cmdBuf = devices->beginOneTimeSubmitCommandBuffer();
+	VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
 	vktools::setImageLayout(cmdBuf,
 		image,
 		VK_IMAGE_LAYOUT_UNDEFINED,
@@ -95,7 +95,7 @@ void Texture2D::load(VulkanDevice* devices, unsigned char* data,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	devices->endOneTimeSubmitCommandBuffer(cmdBuf);
+	devices->endCommandBuffer(cmdBuf);
 	devices->memoryAllocator.freeBufferMemory(stagingBuffer, properties);
 	vkDestroyBuffer(devices->device, stagingBuffer, nullptr);
 
@@ -176,7 +176,7 @@ void TextureCube::load(VulkanDevice* devices, const std::string& path){
 
 
 	//set image layout & data copy
-	VkCommandBuffer cmdBuf = devices->beginOneTimeSubmitCommandBuffer();
+	VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
 	VkImageSubresourceRange subresourceRange{};
 	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	subresourceRange.baseMipLevel = 0;
@@ -209,7 +209,7 @@ void TextureCube::load(VulkanDevice* devices, const std::string& path){
 		descriptor.imageLayout,
 		subresourceRange);
 
-	devices->endOneTimeSubmitCommandBuffer(cmdBuf);
+	devices->endCommandBuffer(cmdBuf);
 
 	//create image view
 	VkImageViewCreateInfo imageViewInfo = vktools::initializers::imageViewCreateInfo(

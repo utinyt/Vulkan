@@ -22,4 +22,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\full_quad.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\full_quad.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\gbuffer.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\gbuffer.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+  </ItemGroup>
 </Project>

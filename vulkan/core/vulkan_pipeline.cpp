@@ -124,8 +124,12 @@ void PipelineGenerator::setRasterizerInfo(VkPolygonMode polygonMode,
 * 
 * @param blendEnable
 */
-void PipelineGenerator::setColorBlendInfo(VkBool32 blendEnable) {
-	colorBlendAttachmentStates = { vktools::initializers::pipelineColorBlendAttachment(blendEnable) };
+void PipelineGenerator::setColorBlendInfo(VkBool32 blendEnable, uint32_t nbColorAttachment) {
+	colorBlendAttachmentStates.clear();
+	for (uint32_t i = 0; i < nbColorAttachment; ++i) {
+		colorBlendAttachmentStates.push_back(vktools::initializers::pipelineColorBlendAttachment(blendEnable));
+	}
+	
 	colorBlendAttachmentStates.shrink_to_fit();
 
 	colorBlendStateCreateInfo =

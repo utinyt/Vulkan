@@ -26,9 +26,9 @@ struct VulkanDevice {
 	/** @brief copy data to an image */
 	void copyBufferToImage(VkBuffer buffer, VkImage image, VkOffset3D offset, VkExtent3D extent) const;
 	/** @brief create & start one-time submit command buffer */
-	VkCommandBuffer beginOneTimeSubmitCommandBuffer() const;
+	VkCommandBuffer beginCommandBuffer(VkCommandBufferUsageFlagBits flag = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) const;
 	/** @brief submit command to the queue, end & destroy one-time submit command buffer */
-	void endOneTimeSubmitCommandBuffer(VkCommandBuffer commandBuffer) const;
+	void endCommandBuffer(VkCommandBuffer commandBuffer) const;
 	/** @brief get max sample count */
 	VkSampleCountFlagBits getMaxSampleCount() const;
 
