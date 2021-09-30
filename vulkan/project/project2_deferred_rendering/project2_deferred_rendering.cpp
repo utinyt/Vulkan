@@ -233,8 +233,23 @@ private:
 		updateUniformBuffer(currentFrame);
 	}
 
-	void createOffscreenRenderPassFramebuffer() {
+	/*
+	* override resize function - update offscreen resources
+	*/
+	void resizeWindow(bool /*recordCommandBuffer*/) override {
+		VulkanAppBase::resizeWindow(false);
+		createOffscreenRenderPassFramebuffer(true); //no need to recreate renderpass
+		updateDescriptorSets();
+		recordCommandBuffer();
+		createOffscreenCommandBuffer();
+	}
+
+	/*
+	* offscreen images & render pass & framebuffer
+	*/
+	void createOffscreenRenderPassFramebuffer(bool createFramebufferOnly = false) {
 		offscreenFramebuffer.init(&devices);
+		offscreenFramebuffer.cleanup();
 
 		VkMemoryPropertyFlagBits memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
@@ -256,12 +271,16 @@ private:
 		attachmentInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
 
-		//sampler
-		VkSamplerCreateInfo samplerInfo = 
-			vktools::initializers::samplerCreateInfo(devices.availableFeatures, devices.properties, VK_FILTER_NEAREST);
-		VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
+		if (createFramebufferOnly == false) {
+			//sampler
+			VkSamplerCreateInfo samplerInfo =
+				vktools::initializers::samplerCreateInfo(devices.availableFeatures, devices.properties, VK_FILTER_NEAREST);
+			VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
 
-		offscreenRenderPass = offscreenFramebuffer.createRenderPass();
+			//render pass
+			offscreenRenderPass = offscreenFramebuffer.createRenderPass();
+		}
+		
 		offscreenFramebuffer.createFramebuffer(swapchain.extent, offscreenRenderPass);
 	}
 
@@ -280,6 +299,11 @@ private:
 	* create & record offscreen command buffer
 	*/
 	void createOffscreenCommandBuffer() {
+		if (!offscreenCmdBuf.empty()) {
+			vkFreeCommandBuffers(devices.device, devices.commandPool,
+				static_cast<uint32_t>(offscreenCmdBuf.size()), offscreenCmdBuf.data());
+		}
+
 		std::vector<VkClearValue> clearValues{};
 		clearValues.resize(3);
 		clearValues[0].color = clearColor;
@@ -496,7 +520,7 @@ private:
 		
 		UBO ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
-		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time / 5), 0, 2.5 * std::sin(time / 5));
+		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time), 0, 2.5 * std::sin(time));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
@@ -552,4 +576,4 @@ private:
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project2");
+RUN_APPLICATION_MAIN(VulkanApp, 1200, 800, "project2");

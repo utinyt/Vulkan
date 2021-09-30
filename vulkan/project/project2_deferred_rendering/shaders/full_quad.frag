@@ -8,5 +8,5 @@ layout(set = 0, binding = 0) uniform sampler2D position;
 layout(set = 0, binding = 1) uniform sampler2D normal;
 
 void main(){
-	col = texture(normal, outUV);
+	col = texture(position, outUV);
 }

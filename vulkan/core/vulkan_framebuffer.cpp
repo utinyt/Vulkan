@@ -15,6 +15,7 @@ void Framebuffer::cleanup() {
 		vkDestroyImage(devices->device, attachment.image, nullptr);
 		vkDestroyImageView(devices->device, attachment.imageView, nullptr);
 	}
+	attachments.clear();
 
 	//render pass & framebuffer
 	vkDestroyFramebuffer(devices->device, framebuffer, nullptr);
