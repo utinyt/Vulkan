@@ -355,8 +355,8 @@ private:
 
 		std::vector<VkClearValue> clearValues{};
 		clearValues.resize(3);
-		clearValues[0].color = clearColor;
-		clearValues[1].color = clearColor;
+		clearValues[0].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
+		clearValues[1].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
 		clearValues[2].depthStencil = {1.f, 0};
 		clearValues.shrink_to_fit();
 

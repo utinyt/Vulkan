@@ -31,13 +31,17 @@ vec3 CalculateLighting(vec3 pos, vec3 normal) {
 		float att = ubo.lights[i].radius / (pow(dist, 2.0) + 1.0);
 
 		//diffuse
-		vec3 fragToLight = ubo.lights[i].pos.xyz - pos;
-		fragToLight = normalize(fragToLight);
+		vec3 fragToLight = normalize(ubo.lights[i].pos.xyz - pos);
 		float NL = max(dot(normal, fragToLight), 0.f);
-		vec3 diffuse = NL * ubo.lights[i].color;
+		vec3 diffuse = att * NL * ubo.lights[i].color;
 
 		//spec
-		sum += att * diffuse;
+		vec3 fragToCam = normalize(ubo.camPos.xyz - pos);
+		vec3 reflectDir = reflect(-fragToLight, normal);
+		float spec = pow(max(dot(fragToCam, reflectDir), 0.0), 32);
+		vec3 specular = att * spec * ubo.lights[i].color;
+
+		sum += specular + diffuse;
 	}
 
 	//hardcoded ambient
@@ -59,9 +63,10 @@ void main(){
 	//light calculation
 	vec3 lighting = vec3(0.f);
 	for(int i = 0; i < ubo.sampleCount; ++i){
-		vec3 pos = texelFetch(position, UV, i).xyz;
-		vec3 normal = texelFetch(normal, UV, i).xyz;
-		lighting += CalculateLighting(pos, normal);
+		vec4 samplePos = texelFetch(position, UV, i);
+		vec3 pos = samplePos.xyz;
+		vec3 normal = normalize(texelFetch(normal, UV, i).xyz);
+		lighting += CalculateLighting(pos, normal) * samplePos.a;
 	}
 	lighting /= float(ubo.sampleCount);
 
