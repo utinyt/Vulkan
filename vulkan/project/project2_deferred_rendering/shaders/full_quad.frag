@@ -7,7 +7,7 @@ layout(location = 0) out vec4 col;
 layout(set = 0, binding = 0) uniform sampler2DMS position;
 layout(set = 0, binding = 1) uniform sampler2DMS normal;
 
-#define LIGHT_NUM 6
+#define LIGHT_NUM 20
 
 struct Light{
 	vec4 pos;
@@ -28,6 +28,9 @@ vec3 CalculateLighting(vec3 pos, vec3 normal) {
 	//diffuse + spec
 	for(int i = 0; i < LIGHT_NUM; ++i){
 		float dist = length(ubo.lights[i].pos.xyz - pos);
+		if(dist > ubo.lights[i].radius)
+			continue;
+
 		float att = ubo.lights[i].radius / (pow(dist, 2.0) + 1.0);
 
 		//diffuse
