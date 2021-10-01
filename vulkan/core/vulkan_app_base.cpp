@@ -125,10 +125,6 @@ void VulkanAppBase::initVulkan() {
 
 	swapchain.init(&devices, window);
 	swapchain.create();
-
-	while(sampleCount > static_cast<int32_t>(devices.maxSampleCount)) {
-		sampleCount = static_cast<VkSampleCountFlagBits>(sampleCount / 2);
-	}
 }
 
 /*
@@ -179,7 +175,7 @@ uint32_t VulkanAppBase::prepareFrame() {
 	uint32_t imageIndex;
 	VkResult result = swapchain.acquireImage(presentCompleteSemaphores[currentFrame], imageIndex);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-		resizeWindow();
+		resizeWindow(sampleCount);
 	}
 	else {
 		VK_CHECK_RESULT(result);
@@ -204,7 +200,7 @@ void VulkanAppBase::submitFrame(uint32_t imageIndex) {
 	VkResult result = swapchain.queuePresent(imageIndex, renderCompleteSemaphores[currentFrame]);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowResized) {
 		windowResized = false;
-		resizeWindow();
+		resizeWindow(sampleCount);
 	}
 	else {
 		VK_CHECK_RESULT(result);

@@ -45,7 +45,7 @@ public:
 class VulkanApp : public VulkanAppBase {
 public:
 	/** uniform buffer object */
-	struct UBO {
+	struct CameraMatrices {
 		glm::mat4 model;
 		glm::mat4 view;
 		glm::mat4 normalMatrix;
@@ -76,10 +76,10 @@ public:
 		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
 
 		//uniform buffers
-		for (size_t i = 0; i < uniformBuffers.size(); ++i) {
-			devices.memoryAllocator.freeBufferMemory(uniformBuffers[i],
+		for (size_t i = 0; i < cameraUBO.size(); ++i) {
+			devices.memoryAllocator.freeBufferMemory(cameraUBO[i],
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-			vkDestroyBuffer(devices.device, uniformBuffers[i], nullptr);
+			vkDestroyBuffer(devices.device, cameraUBO[i], nullptr);
 		}
 
 		//skybox textures
@@ -160,9 +160,9 @@ private:
 	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
 
 	/** uniform buffer handle */
-	std::vector<VkBuffer> uniformBuffers;
+	std::vector<VkBuffer> cameraUBO;
 	/**  uniform buffer memory handle */
-	std::vector<MemoryAllocator::HostVisibleMemory> uniformBufferMemories;
+	std::vector<MemoryAllocator::HostVisibleMemory> cameraUBOMemories;
 	/** abstracted 3d mesh */
 	Mesh model, skybox;
 	/** model vertex & index buffer */
@@ -480,17 +480,17 @@ private:
 	* create MAX_FRAMES_IN_FLIGHT of ubos
 	*/
 	void createUniformBuffers() {
-		VkDeviceSize bufferSize = sizeof(UBO);
-		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-		uniformBufferMemories.resize(MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize bufferSize = sizeof(CameraMatrices);
+		cameraUBO.resize(MAX_FRAMES_IN_FLIGHT);
+		cameraUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
 
 		VkBufferCreateInfo uniformBufferCreateInfo = vktools::initializers::bufferCreateInfo(
 			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &uniformBufferCreateInfo, nullptr, &uniformBuffers[i]));
-			uniformBufferMemories[i] = devices.memoryAllocator.allocateBufferMemory(
-					uniformBuffers[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &uniformBufferCreateInfo, nullptr, &cameraUBO[i]));
+			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
+					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		}
 	}
 
@@ -504,7 +504,7 @@ private:
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 		
-		UBO ubo{};
+		CameraMatrices ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
 		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time / 5), 0, 2.5 * std::sin(time / 5));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
@@ -513,7 +513,7 @@ private:
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;
 
-		uniformBufferMemories[currentFrame].mapData(devices.device, &ubo);
+		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
 	}
 
 	/*
@@ -535,7 +535,7 @@ private:
 	void updateDescriptorSets() {
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VkDescriptorBufferInfo bufferInfo{ uniformBuffers[i], 0, sizeof(UBO)};
+			VkDescriptorBufferInfo bufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
 			std::vector<VkWriteDescriptorSet> writes = {
 				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
 				bindings.makeWrite(descriptorSets[i], 1, &skyboxTexture.descriptor)

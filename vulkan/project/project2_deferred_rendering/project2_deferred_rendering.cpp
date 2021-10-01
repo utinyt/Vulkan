@@ -1,5 +1,6 @@
 #include <array>
 #include <chrono>
+#include <random>
 #include <include/imgui/imgui.h>
 #include "core/vulkan_app_base.h"
 #include "core/vulkan_mesh.h"
@@ -11,12 +12,28 @@
 #include "core/vulkan_pipeline.h"
 #include "core/vulkan_framebuffer.h"
 
+namespace {
+	std::random_device device;
+	std::mt19937_64 RNGen(device());
+	std::uniform_real_distribution<> rdFloat(0.0, 1.0);
+	const int LIGHT_NUM = 6;
+}
+
 class Imgui : public ImguiBase {
 public:
 	virtual void newFrame() override {
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
+		ImGui::Text("Render Mode");
+		static int mode = 0;
+		ImGui::RadioButton("Lighting", &mode, 0); ImGui::SameLine();
+		ImGui::RadioButton("Position", &mode, 1); ImGui::SameLine();
+		ImGui::RadioButton("Normal", &mode, 2); ImGui::SameLine();
+
+		if (userInput.renderMode != mode) {
+			userInput.renderMode = mode;
+		}
 
 		ImGui::End();
 		ImGui::Render();
@@ -24,20 +41,12 @@ public:
 
 	/* user input collection */
 	struct UserInput {
-		
+		int renderMode = 0;
 	} userInput;
 };
 
 class VulkanApp : public VulkanAppBase {
 public:
-	/** uniform buffer object */
-	struct UBO {
-		glm::mat4 model;
-		glm::mat4 view;
-		glm::mat4 normalMatrix;
-		glm::mat4 proj;
-	};
-
 	/*
 	* constructor - get window size & title
 	*/
@@ -64,10 +73,13 @@ public:
 		vkDestroyDescriptorSetLayout(devices.device, offscreenDescriptorSetLayout, nullptr);
 
 		//uniform buffers
-		for (size_t i = 0; i < uniformBuffers.size(); ++i) {
-			devices.memoryAllocator.freeBufferMemory(uniformBuffers[i],
+		for (size_t i = 0; i < cameraUBO.size(); ++i) {
+			devices.memoryAllocator.freeBufferMemory(cameraUBO[i],
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-			vkDestroyBuffer(devices.device, uniformBuffers[i], nullptr);
+			vkDestroyBuffer(devices.device, cameraUBO[i], nullptr);
+			devices.memoryAllocator.freeBufferMemory(deferredUBO[i],
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			vkDestroyBuffer(devices.device, deferredUBO[i], nullptr);
 		}
 
 		//model & skybox buffers
@@ -98,8 +110,8 @@ public:
 	* application initialization - also contain base class initApp()
 	*/
 	virtual void initApp() override {
-		//sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 		VulkanAppBase::initApp();
+		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 
 		//mesh loading & buffer creation
 		model.load("../../meshes/bunny.obj");
@@ -133,7 +145,7 @@ public:
 		updateDescriptorSets();
 		//imgui
 		imguiBase->init(&devices, swapchain.extent.width, swapchain.extent.height,
-			renderPass, MAX_FRAMES_IN_FLIGHT, sampleCount);
+			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
 		//record command buffer
 		recordCommandBuffer();
 		//create & record offscreen command buffer
@@ -141,6 +153,33 @@ public:
 	}
 
 private:
+	/** uniform buffer object */
+	struct CameraMatrices {
+		glm::mat4 model;
+		glm::mat4 view;
+		glm::mat4 normalMatrix;
+		glm::mat4 proj;
+	};
+
+	/** Light struct */
+	struct Light {
+		glm::vec4 pos;
+		glm::vec3 color;
+		float radius;
+	};
+
+	/** ubo for deferred rendering */
+	struct UBODeferredRending {
+		Light lights[LIGHT_NUM];
+		glm::vec4 camPos;
+		int renderMode = 0; // 0 - deferred lighting, 1 - position, 2 - normal
+		int sampleCount = 1;
+	} uboDeferredRendering;
+
+	/** random float generator */
+	std::random_device rd;
+	std::mt19937 mt;
+
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
@@ -161,14 +200,21 @@ private:
 	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
 
 	/** uniform buffer handle */
-	std::vector<VkBuffer> uniformBuffers;
+	std::vector<VkBuffer> cameraUBO;
 	/**  uniform buffer memory handle */
-	std::vector<MemoryAllocator::HostVisibleMemory> uniformBufferMemories;
+	std::vector<MemoryAllocator::HostVisibleMemory> cameraUBOMemories;
+	/** uniform buffer handle */
+	std::vector<VkBuffer> deferredUBO;
+	/**  uniform buffer memory handle */
+	std::vector<MemoryAllocator::HostVisibleMemory> deferredUBOMemories;
 	/** abstracted 3d mesh */
 	Mesh model, skybox;
 	/** model vertex & index buffer */
 	VkBuffer modelBuffer;
 
+	/*
+	* offscreen resources
+	*/
 	/** offscreen framebuffer */
 	Framebuffer offscreenFramebuffer;
 	/** offscreen render pass */
@@ -237,7 +283,10 @@ private:
 	* override resize function - update offscreen resources
 	*/
 	void resizeWindow(bool /*recordCommandBuffer*/) override {
+		sampleCount = VK_SAMPLE_COUNT_1_BIT;
 		VulkanAppBase::resizeWindow(false);
+		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
+
 		createOffscreenRenderPassFramebuffer(true); //no need to recreate renderpass
 		updateDescriptorSets();
 		recordCommandBuffer();
@@ -494,17 +543,36 @@ private:
 	* create MAX_FRAMES_IN_FLIGHT of ubos
 	*/
 	void createUniformBuffers() {
-		VkDeviceSize bufferSize = sizeof(UBO);
-		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-		uniformBufferMemories.resize(MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize cameraUBOSize = sizeof(CameraMatrices);
+		cameraUBO.resize(MAX_FRAMES_IN_FLIGHT);
+		cameraUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize deferredUBOSize = sizeof(UBODeferredRending);
+		deferredUBO.resize(MAX_FRAMES_IN_FLIGHT);
+		deferredUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
 
-		VkBufferCreateInfo uniformBufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo cameraUBOCreateInfo = vktools::initializers::bufferCreateInfo(
+			cameraUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo deferredUBOCreateInfo = vktools::initializers::bufferCreateInfo(
+			deferredUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &uniformBufferCreateInfo, nullptr, &uniformBuffers[i]));
-			uniformBufferMemories[i] = devices.memoryAllocator.allocateBufferMemory(
-					uniformBuffers[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &cameraUBOCreateInfo, nullptr, &cameraUBO[i]));
+			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
+					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &deferredUBOCreateInfo, nullptr, &deferredUBO[i]));
+			deferredUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
+				deferredUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		}
+
+		//update once 
+		float PI = 3.141592f;
+		float angleInc = 2 * PI / LIGHT_NUM;
+		for (int i = 0; i < LIGHT_NUM; ++i) {
+			uboDeferredRendering.lights[i].pos =
+				glm::vec4(3 * std::cos(i * angleInc), 0, 3 * std::sin(i * angleInc), 1.f);
+			uboDeferredRendering.lights[i].color = glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen));
+			uboDeferredRendering.lights[i].radius = 3.f;
 		}
 	}
 
@@ -518,16 +586,28 @@ private:
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 		
-		UBO ubo{};
+		/*
+		* update camera
+		*/
+		CameraMatrices ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
-		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time), 0, 2.5 * std::sin(time));
+		glm::vec3 camPos = glm::vec3(2.5 * std::cos(time / 2), 0, 2.5 * std::sin(time / 2));
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
 		ubo.proj[1][1] *= -1;
 
-		uniformBufferMemories[currentFrame].mapData(devices.device, &ubo);
+		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
+
+		/*
+		* update lights & renderMode
+		*/
+		uboDeferredRendering.camPos = glm::vec4(camPos, 1.f);
+		uboDeferredRendering.sampleCount = sampleCount;
+		uboDeferredRendering.renderMode = static_cast<Imgui*>(imguiBase)->userInput.renderMode;
+		
+		deferredUBOMemories[currentFrame].mapData(devices.device, &uboDeferredRendering);
 	}
 
 	/*
@@ -549,6 +629,8 @@ private:
 		//descriptor - 2 image samplers
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		//descriptor - 1 uniform buffer
+		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -559,16 +641,21 @@ private:
 	*/
 	void updateDescriptorSets() {
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VkDescriptorBufferInfo bufferInfo{ uniformBuffers[i], 0, sizeof(UBO)};
+			//offscreen rendering
+			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
+
+			//full quad rendering
 			VkDescriptorImageInfo posAttachmentInfo{offscreenSampler, 
 				offscreenFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 			VkDescriptorImageInfo normalAttachmentInfo{ offscreenSampler, 
 				offscreenFramebuffer.attachments[1].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+			VkDescriptorBufferInfo deferredUBObufferInfo{ deferredUBO[i], 0, sizeof(UBODeferredRending) };
 
 			std::vector<VkWriteDescriptorSet> writes = {
-				offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &bufferInfo),
+				offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &cameraUBObufferInfo),
 				bindings.makeWrite(descriptorSets[i], 0, &posAttachmentInfo),
 				bindings.makeWrite(descriptorSets[i], 1, &normalAttachmentInfo),
+				bindings.makeWrite(descriptorSets[i], 2, &deferredUBObufferInfo),
 			};
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
