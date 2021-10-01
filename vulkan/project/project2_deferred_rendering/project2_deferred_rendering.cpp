@@ -17,7 +17,7 @@ namespace {
 	std::mt19937_64 RNGen(device());
 	std::uniform_real_distribution<> rdFloat(0.0, 1.0);
 	const int LIGHT_NUM = 20;
-	const int INSTANCE_NUM_SQRT = 8;
+	const int INSTANCE_NUM_SQRT = 16;
 }
 
 class Imgui : public ImguiBase {
@@ -83,13 +83,15 @@ public:
 			vkDestroyBuffer(devices.device, deferredUBO[i], nullptr);
 		}
 
-		//model & skybox buffers
+		//model & floor buffers
 		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(floorBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, floorBuffer, nullptr);
 
 		//instanced position buffer
-		devices.memoryAllocator.freeBufferMemory(instancedPosBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, instancedPosBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(instancedTransformationBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, instancedTransformationBuffer, nullptr);
 
 		//framebuffers
 		for (auto& framebuffer : framebuffers) {
@@ -122,6 +124,8 @@ public:
 		//mesh loading & buffer creation
 		model.load("../../meshes/bunny.obj");
 		modelBuffer = model.createModelBuffer(&devices);
+		floor.load("../../meshes/cube.obj");
+		floorBuffer = floor.createModelBuffer(&devices);
 
 		//instance possition buffer
 		createInstancePositionBuffer();
@@ -216,9 +220,9 @@ private:
 	/**  uniform buffer memory handle */
 	std::vector<MemoryAllocator::HostVisibleMemory> deferredUBOMemories;
 	/** abstracted 3d mesh */
-	Mesh model, skybox;
+	Mesh model, floor;
 	/** model vertex & index buffer */
-	VkBuffer modelBuffer;
+	VkBuffer modelBuffer, floorBuffer;
 
 	/*
 	* offscreen resources
@@ -247,9 +251,13 @@ private:
 	std::vector<VkDescriptorSet> offscreenDescriptorSets;
 
 	/** instanced model positions */
-	std::vector<glm::vec3> instancedPos;
+	struct Transformation {
+		glm::vec3 pos;
+		glm::vec3 scale;
+	};
+	std::vector<Transformation> instancedTransformation;
 	/** buffer for instancePos */
-	VkBuffer instancedPosBuffer = VK_NULL_HANDLE;
+	VkBuffer instancedTransformationBuffer = VK_NULL_HANDLE;
 
 	/*
 	* called every frame - submit queues
@@ -310,16 +318,20 @@ private:
 	* create a buffer for instanced model positions
 	*/
 	void createInstancePositionBuffer() {
+		instancedTransformation.push_back({ glm::vec3(0.f, 0.f, 0.f), glm::vec3(50.f, 1.f, 50.f) }); //floor
 		int start = -INSTANCE_NUM_SQRT / 2;
 		for (int col = start; col < -start; ++col) {
 			for (int row = start; row < -start; ++row) {
-				instancedPos.push_back(glm::vec3(col * 3, 0.5f, row * 3));
+				instancedTransformation.push_back({ 
+					glm::vec3(col * 2 + rdFloat(RNGen), rdFloat(RNGen), row * 2 + rdFloat(RNGen)),
+					glm::vec3(1.f, 1.f, 1.f) 
+				});
 			}
 		}
 
-		instancedPos.shrink_to_fit();
+		instancedTransformation.shrink_to_fit();
 
-		VkDeviceSize bufferSize = sizeof(instancedPos[0]) * instancedPos.size();
+		VkDeviceSize bufferSize = sizeof(instancedTransformation[0]) * instancedTransformation.size();
 
 		//create staging buffer
 		VkBuffer stagingBuffer;
@@ -332,19 +344,19 @@ private:
 		MemoryAllocator::HostVisibleMemory hostVisibleMemory = devices.memoryAllocator.allocateBufferMemory(
 			stagingBuffer, properties);
 
-		hostVisibleMemory.mapData(devices.device, instancedPos.data());
+		hostVisibleMemory.mapData(devices.device, instancedTransformation.data());
 
 		//create vertex & index buffer
 		VkBufferCreateInfo bufferCreateInfo = vktools::initializers::bufferCreateInfo(
 			bufferSize,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bufferCreateInfo, nullptr, &instancedPosBuffer));
+		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bufferCreateInfo, nullptr, &instancedTransformationBuffer));
 
 		//suballocation
-		devices.memoryAllocator.allocateBufferMemory(instancedPosBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		devices.memoryAllocator.allocateBufferMemory(instancedTransformationBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 		//host visible -> device local
-		devices.copyBuffer(devices.commandPool, stagingBuffer, instancedPosBuffer, bufferSize);
+		devices.copyBuffer(devices.commandPool, stagingBuffer, instancedTransformationBuffer, bufferSize);
 
 		devices.memoryAllocator.freeBufferMemory(stagingBuffer, properties);
 		vkDestroyBuffer(devices.device, stagingBuffer, nullptr);
@@ -449,9 +461,16 @@ private:
 				0, 1, &offscreenDescriptorSets[i], 0, nullptr);
 
 			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 0, 1, &floorBuffer, offsets);
+			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 1, 1, &instancedTransformationBuffer, offsets);
+			VkDeviceSize indexBufferOffset = floor.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(offscreenCmdBuf[i], floorBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(offscreenCmdBuf[i], static_cast<uint32_t>(floor.indices.size()), 1, 0, 0, 0);
+
 			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 0, 1, &modelBuffer, offsets);
-			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 1, 1, &instancedPosBuffer, offsets);
-			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
+			offsets[0] = sizeof(Transformation);
+			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 1, 1, &instancedTransformationBuffer, offsets);
+			indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
 			vkCmdBindIndexBuffer(offscreenCmdBuf[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
 			vkCmdDrawIndexed(offscreenCmdBuf[i], static_cast<uint32_t>(model.indices.size()), INSTANCE_NUM_SQRT * INSTANCE_NUM_SQRT, 0, 0, 0);
 
@@ -478,8 +497,9 @@ private:
 		auto bindingDescription = model.getBindingDescription();
 		auto attributeDescription = model.getAttributeDescriptions();
 		//instanced position descriptions
-		VkVertexInputBindingDescription instancedPosBindingDesc{1, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_INSTANCE};
+		VkVertexInputBindingDescription instancedPosBindingDesc{1, sizeof(Transformation), VK_VERTEX_INPUT_RATE_INSTANCE};
 		attributeDescription.push_back({ 2, 1, VK_FORMAT_R32G32B32_SFLOAT, 0 });
+		attributeDescription.push_back({ 3, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(glm::vec3) });
 
 		PipelineGenerator gen(devices.device);
 		gen.setColorBlendInfo(VK_FALSE, 2);
@@ -627,14 +647,16 @@ private:
 				deferredUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		}
 
-		//update once 
-		float PI = 3.141592f;
-		float angleInc = 2 * PI / LIGHT_NUM;
+		//assign color & radius
 		for (int i = 0; i < LIGHT_NUM; ++i) {
-			uboDeferredRendering.lights[i].pos =
-				glm::vec4(8 * std::cos(i * angleInc), 0, 8 * std::sin(i * angleInc), 1.f);
 			uboDeferredRendering.lights[i].color = glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen));
-			uboDeferredRendering.lights[i].radius = 5.f;
+			float constant = 1.f;
+			float linear = 0.7f;
+			float quadratic = 1.8f;
+			float lightMax = std::fmaxf(std::fmaxf(uboDeferredRendering.lights[i].color.x,
+				uboDeferredRendering.lights[i].color.y), uboDeferredRendering.lights[i].color.z);
+			uboDeferredRendering.lights[i].radius = (-linear + std::sqrtf(
+				linear * linear - 4 * quadratic * (constant - (256 / 5.f) * lightMax)) / (2 * quadratic));
 		}
 	}
 
@@ -652,8 +674,7 @@ private:
 		* update camera
 		*/
 		CameraMatrices ubo{};
-		//glm::vec3 camPos = glm::vec3(2.5 * std::cos(time / 5), 0, 2.5 * std::sin(time / 5));
-		glm::vec3 camPos = glm::vec3(5.f, 4.f, 20.f);
+		glm::vec3 camPos = glm::vec3(5.f, 6.f, 22.f);
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
 		ubo.proj = glm::perspective(glm::radians(45.f),
@@ -668,7 +689,12 @@ private:
 		uboDeferredRendering.camPos = glm::vec4(camPos, 1.f);
 		uboDeferredRendering.sampleCount = sampleCount;
 		uboDeferredRendering.renderMode = static_cast<Imgui*>(imguiBase)->userInput.renderMode;
-		
+		float PI = 3.141592f;
+		float angleInc = 2 * PI / LIGHT_NUM;
+		for (int i = 0; i < LIGHT_NUM; ++i) {
+			uboDeferredRendering.lights[i].pos =
+				glm::vec4(12 * std::cos(time / 3 + i * angleInc), 3.f, 12 * std::sin(time / 3 + i * angleInc), 1.f);
+		}
 		deferredUBOMemories[currentFrame].mapData(devices.device, &uboDeferredRendering);
 	}
 

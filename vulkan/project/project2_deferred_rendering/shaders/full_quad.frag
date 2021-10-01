@@ -28,8 +28,8 @@ vec3 CalculateLighting(vec3 pos, vec3 normal) {
 	//diffuse + spec
 	for(int i = 0; i < LIGHT_NUM; ++i){
 		float dist = length(ubo.lights[i].pos.xyz - pos);
-		if(dist > ubo.lights[i].radius)
-			continue;
+//		if(dist > ubo.lights[i].radius)
+//			continue;
 
 		float att = ubo.lights[i].radius / (pow(dist, 2.0) + 1.0);
 
@@ -48,8 +48,8 @@ vec3 CalculateLighting(vec3 pos, vec3 normal) {
 	}
 
 	//hardcoded ambient
-	//vec3 ambient = vec3(LIGHT_NUM * 0.1f);
-	return sum;
+	vec3 ambient = vec3(LIGHT_NUM * 0.001f);
+	return sum + ambient;
 }
 
 void main(){
