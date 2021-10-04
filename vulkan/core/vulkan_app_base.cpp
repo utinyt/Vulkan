@@ -7,9 +7,9 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #ifdef NDEBUG
-const bool enableValidationLayer = false;
+bool enableValidationLayer = false;
 #else
-const bool enableValidationLayer = true;
+bool enableValidationLayer = true;
 #endif
 
 /*
@@ -285,14 +285,18 @@ void VulkanAppBase::createInstance() {
 	instanceInfo.enabledLayerCount = 0;
 	instanceInfo.ppEnabledLayerNames = nullptr;
 
+	//layer setting
+	uint32_t layerCount;
+	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+	std::vector<VkLayerProperties> availableLayers(layerCount);
+	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+	
+	uint32_t enabledLayerCount = 0;
+	std::vector<const char*> enabledLayerNames{};
+
 	//vailidation layer settings
 	VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
 	if (enableValidationLayer) {
-		uint32_t layerCount;
-		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-		std::vector<VkLayerProperties> availableLayers(layerCount);
-		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
 		const char* requiredValidationLayer = "VK_LAYER_KHRONOS_validation";
 
 		// -- support check --
@@ -302,14 +306,35 @@ void VulkanAppBase::createInstance() {
 			});
 
 		if (layerIt == availableLayers.end()) {
-			throw std::runtime_error("valiation layer is not supported");
+			LOG("VK_LAYER_KHRONOS_validation is not supported - continue without debug utils");
+			enableValidationLayer = false;
 		}
-
-		instanceInfo.enabledLayerCount = 1;
-		instanceInfo.ppEnabledLayerNames = &requiredValidationLayer;
-		setupDebugMessengerCreateInfo(debugCreateInfo);
-		instanceInfo.pNext = &debugCreateInfo;
+		else {
+			enabledLayerCount++;
+			enabledLayerNames.push_back(requiredValidationLayer);
+			setupDebugMessengerCreateInfo(debugCreateInfo);
+			instanceInfo.pNext = &debugCreateInfo;
+		}
 	}
+
+	//fps counter
+	const char* lunargMonitor = "VK_LAYER_LUNARG_monitor";
+
+	auto layerIt = std::find_if(availableLayers.begin(), availableLayers.end(),
+		[&lunargMonitor](const VkLayerProperties& properties) {
+			return strcmp(properties.layerName, lunargMonitor) == 0;
+		});
+
+	if (layerIt == availableLayers.end()) {
+		LOG("VK_LAYER_LUNARG_monitor is not supported - continue without fps counter");
+	}
+	else {
+		enabledLayerCount++;
+		enabledLayerNames.push_back(lunargMonitor);
+	}
+
+	instanceInfo.enabledLayerCount = enabledLayerCount;
+	instanceInfo.ppEnabledLayerNames = enabledLayerNames.data();
 
 	//instance extension settings
 	// -- GLFW extensions --

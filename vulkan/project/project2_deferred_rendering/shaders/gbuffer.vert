@@ -12,8 +12,8 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inWorldTranslation;
 layout(location = 3) in vec3 inScale;
 
-layout(location = 0) out vec3 outWorldPos;
-layout(location = 1) out vec3 outWorldNormal;
+layout(location = 0) out vec3 outViewPos;
+layout(location = 1) out vec3 outViewNormal;
 
 void main(){
 	//construct model matrix based on the instances position input (inWorldTranslation)
@@ -30,7 +30,7 @@ void main(){
 
 	mat4 model = translation * scale;
 
-	outWorldPos = (model * vec4(inPos, 1.f)).xyz;
-	gl_Position = ubo.proj * ubo.view * vec4(outWorldPos , 1.f);
-	outWorldNormal = mat3(transpose(inverse(model))) * inNormal;
+	outViewPos = (ubo.view * model * vec4(inPos, 1.f)).xyz;
+	gl_Position = ubo.proj * vec4(outViewPos, 1.f);
+	outViewNormal = mat3(transpose(inverse(ubo.view * model))) * inNormal;
 }

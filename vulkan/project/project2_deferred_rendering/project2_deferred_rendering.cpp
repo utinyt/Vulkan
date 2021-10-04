@@ -17,7 +17,7 @@ namespace {
 	std::mt19937_64 RNGen(device());
 	std::uniform_real_distribution<> rdFloat(0.0, 1.0);
 	const int LIGHT_NUM = 20;
-	const int INSTANCE_NUM_SQRT = 16;
+	const int INSTANCE_NUM_SQRT = 32;
 }
 
 class Imgui : public ImguiBase {
@@ -183,7 +183,6 @@ private:
 	/** ubo for deferred rendering */
 	struct UBODeferredRending {
 		Light lights[LIGHT_NUM];
-		glm::vec4 camPos;
 		int renderMode = 0; // 0 - deferred lighting, 1 - position, 2 - normal
 		int sampleCount = 1;
 	} uboDeferredRendering;
@@ -323,7 +322,7 @@ private:
 		for (int col = start; col < -start; ++col) {
 			for (int row = start; row < -start; ++row) {
 				instancedTransformation.push_back({ 
-					glm::vec3(col * 2 + rdFloat(RNGen), rdFloat(RNGen), row * 2 + rdFloat(RNGen)),
+					glm::vec3(col * 1.5, 0.5f, row * 1.5),
 					glm::vec3(1.f, 1.f, 1.f) 
 				});
 			}
@@ -674,7 +673,7 @@ private:
 		* update camera
 		*/
 		CameraMatrices ubo{};
-		glm::vec3 camPos = glm::vec3(5.f, 6.f, 22.f);
+		glm::vec3 camPos = glm::vec3(5.f, 6.f, 20.f);
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
 		ubo.proj = glm::perspective(glm::radians(45.f),
@@ -686,7 +685,6 @@ private:
 		/*
 		* update lights & renderMode
 		*/
-		uboDeferredRendering.camPos = glm::vec4(camPos, 1.f);
 		uboDeferredRendering.sampleCount = sampleCount;
 		uboDeferredRendering.renderMode = static_cast<Imgui*>(imguiBase)->userInput.renderMode;
 		float PI = 3.141592f;
@@ -694,6 +692,7 @@ private:
 		for (int i = 0; i < LIGHT_NUM; ++i) {
 			uboDeferredRendering.lights[i].pos =
 				glm::vec4(12 * std::cos(time / 3 + i * angleInc), 3.f, 12 * std::sin(time / 3 + i * angleInc), 1.f);
+			uboDeferredRendering.lights[i].pos = ubo.view * uboDeferredRendering.lights[i].pos; // light position in view space
 		}
 		deferredUBOMemories[currentFrame].mapData(devices.device, &uboDeferredRendering);
 	}
