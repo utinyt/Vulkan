@@ -83,6 +83,12 @@ public:
 			vkDestroyBuffer(devices.device, deferredUBO[i], nullptr);
 		}
 
+		//ssao resources
+		devices.memoryAllocator.freeBufferMemory(ssaoKernelUBO,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		vkDestroyBuffer(devices.device, ssaoKernelUBO, nullptr);
+		ssaoNoiseTex.cleanup();
+
 		//model & floor buffers
 		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
@@ -216,8 +222,16 @@ private:
 	std::vector<MemoryAllocator::HostVisibleMemory> cameraUBOMemories;
 	/** uniform buffer handle */
 	std::vector<VkBuffer> deferredUBO;
-	/**  uniform buffer memory handle */
+	/** uniform buffer memory handle */
 	std::vector<MemoryAllocator::HostVisibleMemory> deferredUBOMemories;
+	/** ssao sample kernel */
+	VkBuffer ssaoKernelUBO;
+	/** ssao sample kernel memory handle */
+	MemoryAllocator::HostVisibleMemory ssaoKernelUBOMemory;
+	/** ssao noise texture */
+	Texture2D ssaoNoiseTex;
+	/** ssao noise texture */
+
 	/** abstracted 3d mesh */
 	Mesh model, floor;
 	/** model vertex & index buffer */
@@ -314,6 +328,45 @@ private:
 	}
 
 	/*
+	* create ssao related resources
+	*/
+	void createSSAOResources() {
+		//sample kernel
+		std::vector<glm::vec4> sampleKernel;
+		for (int i = 0; i < 64; ++i) {
+			glm::vec3 sample(
+				rdFloat(RNGen) * 2.f - 1.f,
+				rdFloat(RNGen) * 2.f - 1.f,
+				rdFloat(RNGen)); // hemisphere
+			sample = glm::normalize(sample);
+			sample *= rdFloat(RNGen);
+
+			//distribute kernel samples closer to the origin
+			float scale = (float)i / 64.f;
+			scale = 0.1f + scale * scale * (0.9f); //lerp(0.1f, 1.f, scale * scale)
+			sample *= scale;
+			sampleKernel.push_back(glm::vec4(sample, 0.f));
+		}
+
+		//create sample kernel uniform buffer
+		VkDeviceSize kernelSize = static_cast<VkDeviceSize>(sizeof(sampleKernel[0]) * sampleKernel.size());
+		ssaoKernelUBOMemory = devices.createBuffer(ssaoKernelUBO, kernelSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		ssaoKernelUBOMemory.mapData(devices.device, sampleKernel.data());
+
+		//ssao noise
+		std::vector<glm::vec4> ssaoNoise;
+		for (size_t i = 0; i < 16; ++i) {
+			ssaoNoise.push_back(glm::vec4(rdFloat(RNGen) * 2.f - 1.f, rdFloat(RNGen) * 2.f - 1.f, 0.f, 0.f));
+		}
+
+		VkDeviceSize noiseTexSize = static_cast<VkDeviceSize>(sizeof(ssaoNoise[0]) * ssaoNoise.size());
+		ssaoNoiseTex.load(&devices, reinterpret_cast<unsigned char*>(ssaoNoise.data()),
+			4, 4, noiseTexSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+	}
+
+	/*
 	* create a buffer for instanced model positions
 	*/
 	void createInstancePositionBuffer() {
@@ -378,6 +431,7 @@ private:
 			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			sampleCount
 		);
+		//TODO: reconstruct position data from depth value
 		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
 
 		//normal - use same info

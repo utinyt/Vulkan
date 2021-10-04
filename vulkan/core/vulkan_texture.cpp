@@ -50,7 +50,8 @@ void Texture2D::load(VulkanDevice* devices, const std::string& path) {
 * @param format - image format
 */
 void Texture2D::load(VulkanDevice* devices, unsigned char* data,
-	uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format) {
+	uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format,
+	VkFilter filter, VkSamplerAddressMode mode) {
 	//image creation
 	this->devices = devices;
 
@@ -101,7 +102,7 @@ void Texture2D::load(VulkanDevice* devices, unsigned char* data,
 
 	//sampler
 	VkSamplerCreateInfo samplerInfo = vktools::initializers::samplerCreateInfo(
-		devices->availableFeatures, devices->properties);
+		devices->availableFeatures, devices->properties, filter, mode);
 	VK_CHECK_RESULT(vkCreateSampler(devices->device, &samplerInfo, nullptr, &descriptor.sampler));
 	descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }

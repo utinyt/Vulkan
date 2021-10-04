@@ -31,7 +31,8 @@ public:
 	virtual void load(VulkanDevice* devices, const std::string& path) override;
 	/** @brief load texture from a buffer */
 	void load(VulkanDevice* devices, unsigned char* data,
-		uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format);
+		uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format,
+		VkFilter filter = VK_FILTER_LINEAR, VkSamplerAddressMode mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 };
 
 class TextureCube : public TextureBase {
