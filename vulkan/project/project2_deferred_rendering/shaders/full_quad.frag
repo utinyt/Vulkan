@@ -101,7 +101,5 @@ void main(){
 	}
 	lighting /= float(ubo.sampleCount);
 
-	
-	if(gl_FragCoord.x < 200)
-		col = vec4(lighting, 1.f);
+	col = vec4(lighting, 1.f);
 }
