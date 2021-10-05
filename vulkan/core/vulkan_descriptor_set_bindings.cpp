@@ -121,7 +121,7 @@ std::vector<VkDescriptorPoolSize> DescriptorSetBindings::getRequiredPoolSizes(ui
 		//check if same type of VkDescriptorPoolSize struct is already built
 		bool typeFound = false;
 		for (auto poolSizeIt = poolSizes.begin(); poolSizeIt != poolSizes.end(); ++poolSizeIt) {
-			if (poolSizeIt->type == bindingIt->descriptorCount) {
+			if (poolSizeIt->type == bindingIt->descriptorType) {
 				poolSizeIt->descriptorCount += bindingIt->descriptorCount * numSets;
 				typeFound = true;
 				break;

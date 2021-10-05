@@ -35,5 +35,11 @@
     <None Include="shaders\gbuffer.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\ssao.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\ssao_blur.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

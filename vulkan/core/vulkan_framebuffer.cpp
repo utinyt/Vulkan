@@ -125,7 +125,7 @@ VkRenderPass Framebuffer::createRenderPass() {
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
 	subpass.pColorAttachments = colorReferences.data();
-	subpass.pDepthStencilAttachment = &depthReference;
+	subpass.pDepthStencilAttachment = depthAttachmentFound ? &depthReference : nullptr;
 
 	//subpass dependency
 	VkSubpassDependency dependency{};

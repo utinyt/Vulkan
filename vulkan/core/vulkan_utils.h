@@ -143,7 +143,7 @@ namespace vktools {
 			samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 			samplerInfo.mipLodBias = 0.f;
 			samplerInfo.minLod = 0.f;
-			samplerInfo.maxLod = 0.f;
+			samplerInfo.maxLod = 1.f;
 			return samplerInfo;
 		}
 

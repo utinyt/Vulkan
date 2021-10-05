@@ -31,6 +31,7 @@ public:
 		ImGui::RadioButton("Lighting", &mode, 0); ImGui::SameLine();
 		ImGui::RadioButton("Position", &mode, 1); ImGui::SameLine();
 		ImGui::RadioButton("Normal", &mode, 2); ImGui::SameLine();
+		ImGui::RadioButton("SSAO", &mode, 3); ImGui::SameLine();
 
 		if (userInput.renderMode != mode) {
 			userInput.renderMode = mode;
@@ -72,6 +73,10 @@ public:
 		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
 		vkDestroyDescriptorPool(devices.device, offscreenDescriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(devices.device, offscreenDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, ssaoDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, ssaoDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, ssaoBlurDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, ssaoBlurDescriptorSetLayout, nullptr);
 
 		//uniform buffers
 		for (size_t i = 0; i < cameraUBO.size(); ++i) {
@@ -109,10 +114,17 @@ public:
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyPipeline(devices.device, offscreenPipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, offscreenPipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, ssaoPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, ssaoPipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, ssaoBlurPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, ssaoBlurPipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
 		vkDestroyRenderPass(devices.device, offscreenRenderPass, nullptr);
 		offscreenFramebuffer.cleanup();
 		vkDestroySampler(devices.device, offscreenSampler, nullptr);
+		vkDestroyRenderPass(devices.device, ssaoRenderPass, nullptr);
+		ssaoFramebuffer.cleanup();
+		ssaoBlurFramebuffer.cleanup();
 
 		//offscreen semaphores
 		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -132,6 +144,11 @@ public:
 		modelBuffer = model.createModelBuffer(&devices);
 		floor.load("../../meshes/cube.obj");
 		floorBuffer = floor.createModelBuffer(&devices);
+
+		//ssao sample kernel uniform & noise images
+		createSSAOResources();
+		//ssao render pass & framebuffer
+		createSSAORenderPassFramebuffer();
 
 		//instance possition buffer
 		createInstancePositionBuffer();
@@ -177,7 +194,7 @@ private:
 		glm::mat4 view;
 		glm::mat4 normalMatrix;
 		glm::mat4 proj;
-	};
+	} ubo;
 
 	/** Light struct */
 	struct Light {
@@ -230,7 +247,6 @@ private:
 	MemoryAllocator::HostVisibleMemory ssaoKernelUBOMemory;
 	/** ssao noise texture */
 	Texture2D ssaoNoiseTex;
-	/** ssao noise texture */
 
 	/** abstracted 3d mesh */
 	Mesh model, floor;
@@ -262,6 +278,26 @@ private:
 	VkDescriptorPool offscreenDescriptorPool;
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> offscreenDescriptorSets;
+
+	/*
+	* ssao resources
+	*/
+	/** ssao framebuffer - one channel attachment */
+	Framebuffer ssaoFramebuffer, ssaoBlurFramebuffer;
+	/** ssao render pass */
+	VkRenderPass ssaoRenderPass = VK_NULL_HANDLE;
+	/** ssao pipeline - reference gbuffer */
+	VkPipeline ssaoPipeline = VK_NULL_HANDLE, ssaoBlurPipeline = VK_NULL_HANDLE;
+	/** ssao pipeline layout */
+	VkPipelineLayout ssaoPipelineLayout = VK_NULL_HANDLE, ssaoBlurPipelineLayout = VK_NULL_HANDLE;
+	/** ssao descriptor bindings */
+	DescriptorSetBindings ssaoBindings, ssaoBlurBindings;
+	/** ssao descriptor set layout */
+	VkDescriptorSetLayout ssaoDescriptorSetLayout = VK_NULL_HANDLE, ssaoBlurDescriptorSetLayout = VK_NULL_HANDLE;
+	/** ssao descriptor pool */
+	VkDescriptorPool ssaoDescriptorPool = VK_NULL_HANDLE, ssaoBlurDescriptorPool = VK_NULL_HANDLE;
+	/** ssao descriptor sets */
+	VkDescriptorSet ssaoDescriptorSet = VK_NULL_HANDLE, ssaoBlurDescriptorSet = VK_NULL_HANDLE;
 
 	/** instanced model positions */
 	struct Transformation {
@@ -363,7 +399,34 @@ private:
 		VkDeviceSize noiseTexSize = static_cast<VkDeviceSize>(sizeof(ssaoNoise[0]) * ssaoNoise.size());
 		ssaoNoiseTex.load(&devices, reinterpret_cast<unsigned char*>(ssaoNoise.data()),
 			4, 4, noiseTexSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	}
 
+	/*
+	* create ssao framebuffer & renderpass
+	*/
+	void createSSAORenderPassFramebuffer(bool createFramebufferOnly = false) {
+		ssaoFramebuffer.init(&devices);
+		ssaoFramebuffer.cleanup();
+		ssaoBlurFramebuffer.init(&devices);
+		ssaoBlurFramebuffer.cleanup();
+
+		//create ssao framebuffer
+		VkImageCreateInfo ssaoBufferInfo =
+			vktools::initializers::imageCreateInfo(
+				{ swapchain.extent.width, swapchain.extent.height, 1 },
+				VK_FORMAT_R8_UNORM,
+				VK_IMAGE_TILING_OPTIMAL,
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				sampleCount);
+		ssaoFramebuffer.addAttachment(ssaoBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		ssaoBlurFramebuffer.addAttachment(ssaoBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		//render pass
+		if (createFramebufferOnly == false) {
+			ssaoRenderPass = ssaoFramebuffer.createRenderPass();
+		}
+		ssaoFramebuffer.createFramebuffer(swapchain.extent, ssaoRenderPass);
+		ssaoBlurFramebuffer.createFramebuffer(swapchain.extent, ssaoRenderPass);
 	}
 
 	/*
@@ -573,6 +636,41 @@ private:
 		gen.resetAll();
 
 		/*
+		* ssao pipeline
+		*/
+		gen.setColorBlendInfo(VK_FALSE, 1);
+		gen.setMultisampleInfo(sampleCount);
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.addDescriptorSetLayout({ ssaoDescriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/ssao_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+		//generate pipeline layout & pipeline
+		gen.generate(ssaoRenderPass, &ssaoPipeline, &ssaoPipelineLayout);
+		//reset generator
+		gen.resetAll();
+
+		/*
+		* ssao blur pipeline
+		*/
+		gen.setColorBlendInfo(VK_FALSE, 1);
+		gen.setMultisampleInfo(sampleCount);
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.addDescriptorSetLayout({ ssaoBlurDescriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/ssao_blur_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+		//generate pipeline layout & pipeline
+		gen.generate(ssaoRenderPass, &ssaoBlurPipeline, &ssaoBlurPipelineLayout); //reuse ssaoRenderPass
+		gen.resetAll();
+
+		/*
 		* full screen quad pipeline
 		*/
 		gen.setColorBlendInfo(VK_FALSE, 1);
@@ -631,8 +729,12 @@ private:
 		clearValues.resize(2);
 		clearValues[0].color = clearColor;
 		clearValues[1].depthStencil = { 1.f, 0 };
-
 		clearValues.shrink_to_fit();
+
+		//ssao clear value
+		std::vector<VkClearValue> ssaoClearValues{};
+		ssaoClearValues.resize(1);
+		ssaoClearValues[0].color = clearColor;
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -643,18 +745,53 @@ private:
 		renderPassBeginInfo.pClearValues = clearValues.data();
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
-			size_t framebufferIndex = i % framebuffers.size();
-			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
-
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
+			/*
+			* ssao occlusion render - full screem quad
+			*/
+			renderPassBeginInfo.renderPass = ssaoRenderPass;
+			renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
+			renderPassBeginInfo.clearValueCount = 1;
+			renderPassBeginInfo.pClearValues = ssaoClearValues.data();
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 			//dynamic states
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
+				&ssaoDescriptorSet, 0, nullptr);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
 			/*
-			* draw full screen quad
+			* ssao blur - full screen quad
 			*/
+			renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			//dynamic states
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
+				&ssaoBlurDescriptorSet, 0, nullptr);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
+			/*
+			* final - lighting calculation in full screen quad
+			*/
+			renderPassBeginInfo.renderPass = renderPass;
+			size_t framebufferIndex = i % framebuffers.size();
+			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
+			renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+			renderPassBeginInfo.pClearValues = clearValues.data();
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			//dynamic states
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 			size_t descriptorSetIndex = i / framebuffers.size();
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
@@ -726,7 +863,6 @@ private:
 		/*
 		* update camera
 		*/
-		CameraMatrices ubo{};
 		glm::vec3 camPos = glm::vec3(5.f, 6.f, 20.f);
 		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
@@ -765,13 +901,34 @@ private:
 		offscreenDescriptorSets = vktools::allocateDescriptorSets(devices.device, offscreenDescriptorSetLayout, offscreenDescriptorPool, MAX_FRAMES_IN_FLIGHT);
 
 		/*
+		* ssao descriptor
+		*/
+		ssaoBindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //gbuffer pos
+		ssaoBindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //gbuffer normal
+		ssaoBindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //ssao noise
+		ssaoBindings.addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //sample kernal
+		ssaoBindings.addBinding(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //camera matrices
+		ssaoDescriptorPool = ssaoBindings.createDescriptorPool(devices.device, 1);
+		ssaoDescriptorSetLayout = ssaoBindings.createDescriptorSetLayout(devices.device);
+		ssaoDescriptorSet = vktools::allocateDescriptorSets(devices.device, ssaoDescriptorSetLayout, ssaoDescriptorPool, 1).front();
+
+		/*
+		* ssao blur descriptor
+		*/
+		ssaoBlurBindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //ssao attchment from privous pass
+		ssaoBlurDescriptorPool = ssaoBlurBindings.createDescriptorPool(devices.device, 1);
+		ssaoBlurDescriptorSetLayout = ssaoBlurBindings.createDescriptorSetLayout(devices.device);
+		ssaoBlurDescriptorSet = vktools::allocateDescriptorSets(devices.device, ssaoBlurDescriptorSetLayout, ssaoBlurDescriptorPool, 1).front();
+
+		/*
 		* full-screen quad descriptor
 		*/
-		//descriptor - 2 image samplers
+		//descriptor - 3 image samplers
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		//descriptor - 1 uniform buffer
-		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		bindings.addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -781,25 +938,44 @@ private:
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
+		//gbuffer attachments
+		VkDescriptorImageInfo posAttachmentInfo{ offscreenSampler,
+			offscreenFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		VkDescriptorImageInfo normalAttachmentInfo{ offscreenSampler,
+			offscreenFramebuffer.attachments[1].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		VkDescriptorImageInfo ssaoBlurAttachmentInfo{ offscreenSampler,
+			ssaoBlurFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			//offscreen rendering
 			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
-
 			//full quad rendering
-			VkDescriptorImageInfo posAttachmentInfo{offscreenSampler, 
-				offscreenFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-			VkDescriptorImageInfo normalAttachmentInfo{ offscreenSampler, 
-				offscreenFramebuffer.attachments[1].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 			VkDescriptorBufferInfo deferredUBObufferInfo{ deferredUBO[i], 0, sizeof(UBODeferredRending) };
 
-			std::vector<VkWriteDescriptorSet> writes = {
-				offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &cameraUBObufferInfo),
-				bindings.makeWrite(descriptorSets[i], 0, &posAttachmentInfo),
-				bindings.makeWrite(descriptorSets[i], 1, &normalAttachmentInfo),
-				bindings.makeWrite(descriptorSets[i], 2, &deferredUBObufferInfo),
-			};
+			std::vector<VkWriteDescriptorSet> writes;
+			writes.push_back(offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &cameraUBObufferInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &posAttachmentInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &normalAttachmentInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &ssaoBlurAttachmentInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 3, &deferredUBObufferInfo));
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
+
+		//ssao occlusion
+		std::vector<VkWriteDescriptorSet> writes;
+		VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[0], 0, sizeof(CameraMatrices) };
+		VkDescriptorBufferInfo sampleKernelUBObufferInfo{ ssaoKernelUBO, 0, ssaoKernelUBOMemory.size };
+		writes.push_back(ssaoBindings.makeWrite(ssaoDescriptorSet, 0, &posAttachmentInfo));
+		writes.push_back(ssaoBindings.makeWrite(ssaoDescriptorSet, 1, &normalAttachmentInfo));
+		writes.push_back(ssaoBindings.makeWrite(ssaoDescriptorSet, 2, &ssaoNoiseTex.descriptor));
+		writes.push_back(ssaoBindings.makeWrite(ssaoDescriptorSet, 3, &sampleKernelUBObufferInfo));
+		writes.push_back(ssaoBindings.makeWrite(ssaoDescriptorSet, 4, &cameraUBObufferInfo)); //need proj matrix only
+
+		//ssao blur
+		VkDescriptorImageInfo ssaoAttachmentInfo{ offscreenSampler,
+			ssaoFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		writes.push_back(ssaoBlurBindings.makeWrite(ssaoBlurDescriptorSet, 0, &ssaoAttachmentInfo));
+		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
 };
 

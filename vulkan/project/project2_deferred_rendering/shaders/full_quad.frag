@@ -4,8 +4,9 @@
 layout(location = 0) in vec2 inUV;
 layout(location = 0) out vec4 col;
 
-layout(set = 0, binding = 0) uniform sampler2DMS position;
-layout(set = 0, binding = 1) uniform sampler2DMS normal;
+layout(binding = 0) uniform sampler2DMS position;
+layout(binding = 1) uniform sampler2DMS normal;
+layout(binding = 2) uniform sampler2DMS ssaoBlur;
 
 #define LIGHT_NUM 20
 
@@ -15,7 +16,7 @@ struct Light{
 	float radius;
 };
 
-layout(set = 0, binding = 2) uniform UBO {
+layout(binding = 3) uniform UBO {
 	Light lights[LIGHT_NUM];
 	int renderMode;
 	int sampleCount;
@@ -89,6 +90,8 @@ void main(){
 
 	case 2: //normal
 		col = vec4(texelFetch(normal, UV, 0).xyz, 1.f); return;
+	case 3: //ssao
+		col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
 	}
 
 	//light calculation
@@ -100,6 +103,13 @@ void main(){
 		lighting += CalculateLighting(pos, normal) * samplePos.a;
 	}
 	lighting /= float(ubo.sampleCount);
+
+	float AO = 0.f;
+	for(int i = 0; i < ubo.sampleCount; ++i)
+		AO += texelFetch(ssaoBlur, UV, i).x;
+	AO /= float(ubo.sampleCount);
+
+	lighting *= pow(AO, 10);
 
 	col = vec4(lighting, 1.f);
 }
