@@ -12,9 +12,8 @@ void main(){
 	for(int x = -2; x < 2; ++x){
 		for(int y = -2; y < 2; ++y){
 			ivec2 offset = ivec2(x, y);
-			for(int i = 0; i < 8; ++i)
-				result += texelFetch(ssaoOcclusion, UV  + offset, i).x;
+			result += texelFetch(ssaoOcclusion, UV  + offset, 0).x;
 		}
 	}
-	col = result / (16.f * 8);
+	col = result / (16.f);
 }

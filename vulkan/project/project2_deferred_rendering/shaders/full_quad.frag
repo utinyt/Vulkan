@@ -20,6 +20,8 @@ layout(binding = 3) uniform UBO {
 	Light lights[LIGHT_NUM];
 	int renderMode;
 	int sampleCount;
+	float threshold;
+	bool enableSSAO;
 } ubo;
 
 vec3 CalculateLighting(vec3 pos, vec3 normal) {
@@ -59,39 +61,35 @@ void main(){
 	//debug render
 	switch(ubo.renderMode){
 	case 1: //position
-	
-		col = texelFetch(position, UV, 0);
-//		vec3 center = texelFetch(normal, UV, 0).xyz;
-//		vec3 top = texelFetch(normal, UV + ivec2(0, 1), 0).xyz; 
-//		vec3 left = texelFetch(normal, UV + ivec2(-1, 0), 0).xyz; 
-//		vec3 right = texelFetch(normal, UV + ivec2(1, 0), 0).xyz; 
-//		vec3 bottom = texelFetch(normal, UV + ivec2(0, -1), 0).xyz;
-//
-//		float normalDiffTop = length(center - top);
-//		float normalDiffLeft = length(center - left);
-//		float normalDiffRight = length(center - right);
-//		float normalDiffBottom = length(center - bottom);
-//
-//		float threshold = 0.5f;
-//
-//		if(normalDiffTop < threshold &&
-//			normalDiffLeft < threshold &&
-//			normalDiffRight < threshold &&
-//			normalDiffBottom < threshold){
-//			col = vec4(1.f, 0.f, 0.f, 1.f); //red - not edge
-//		}
-//		else{
-//			col = vec4(0.f, 0.f, 1.f, 1.f); //blue - edge
-//		}
-		return;
-
-	
-		
-
+		col = texelFetch(position, UV, 0); return;
 	case 2: //normal
 		col = vec4(texelFetch(normal, UV, 0).xyz, 1.f); return;
 	case 3: //ssao
 		col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
+	case 4: //edge detection
+	{
+		vec3 center = texelFetch(normal, UV, 0).xyz;
+		vec3 top = texelFetch(normal, UV + ivec2(0, 1), 0).xyz; 
+		vec3 left = texelFetch(normal, UV + ivec2(-1, 0), 0).xyz; 
+		vec3 right = texelFetch(normal, UV + ivec2(1, 0), 0).xyz; 
+		vec3 bottom = texelFetch(normal, UV + ivec2(0, -1), 0).xyz;
+
+		float normalDiffTop = length(center - top);
+		float normalDiffLeft = length(center - left);
+		float normalDiffRight = length(center - right);
+		float normalDiffBottom = length(center - bottom);
+
+		if(normalDiffTop < ubo.threshold &&
+			normalDiffLeft < ubo.threshold &&
+			normalDiffRight < ubo.threshold &&
+			normalDiffBottom < ubo.threshold){
+			col = vec4(0.f, 0.f, 0.f, 1.f); //black - not edge
+		}
+		else{
+			col = vec4(1.f, 1.f, 1.f, 1.f); //white - edge
+		}
+		return;
+	}
 	}
 
 	//light calculation
@@ -109,7 +107,8 @@ void main(){
 		AO += texelFetch(ssaoBlur, UV, i).x;
 	AO /= float(ubo.sampleCount);
 
-	lighting *= pow(AO, 10);
+	if(ubo.enableSSAO)
+		lighting *= pow(AO, 2);
 
 	col = vec4(lighting, 1.f);
 }

@@ -90,9 +90,20 @@ protected:
 	/** image sample count */
 	VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
 
+	struct Camera {
+		glm::vec3 camPos = glm::vec3(0, 1, 3);
+		glm::vec3 camFront = glm::vec3(0, 0, -1);
+		glm::vec3 camUp = glm::vec3(0, 1, 0);
+	} camera;
+
 private:
+	double oldXPos = 0, oldYPos = 0;
+	float yaw = -90.f, pitch = 0;
+	bool captureMouse = false;
+
 	void initWindow();
 	void initVulkan();
+	void updateCamera();
 
 	void createInstance();
 	void createCommandBuffers();

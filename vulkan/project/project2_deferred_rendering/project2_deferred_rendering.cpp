@@ -27,14 +27,21 @@ public:
 		ImGui::Begin("Setting");
 
 		ImGui::Text("Render Mode");
-		static int mode = 0;
-		ImGui::RadioButton("Lighting", &mode, 0); ImGui::SameLine();
-		ImGui::RadioButton("Position", &mode, 1); ImGui::SameLine();
-		ImGui::RadioButton("Normal", &mode, 2); ImGui::SameLine();
-		ImGui::RadioButton("SSAO", &mode, 3); ImGui::SameLine();
+		ImGui::RadioButton("Lighting", &userInput.renderMode, 0); ImGui::SameLine();
+		ImGui::RadioButton("Position", &userInput.renderMode, 1); ImGui::SameLine();
+		ImGui::RadioButton("Normal", &userInput.renderMode, 2); ImGui::SameLine();
+		ImGui::RadioButton("SSAO", &userInput.renderMode, 3); ImGui::SameLine();
+		ImGui::RadioButton("Edge", &userInput.renderMode, 4);
 
-		if (userInput.renderMode != mode) {
-			userInput.renderMode = mode;
+		if (userInput.renderMode == 0) {
+			ImGui::NewLine();
+			ImGui::Checkbox("Enable SSAO", &userInput.enableSSAO);
+		}
+		
+		//edge detection threshold
+		if (userInput.renderMode == 4) {
+			ImGui::Text("Edge detection threshold");
+			ImGui::SliderFloat("Threshold", &userInput.threshold, 0.0f, 1.0f);
 		}
 
 		ImGui::End();
@@ -44,6 +51,8 @@ public:
 	/* user input collection */
 	struct UserInput {
 		int renderMode = 0;
+		float threshold = 0.5f;
+		bool enableSSAO = false;
 	} userInput;
 };
 
@@ -208,6 +217,8 @@ private:
 		Light lights[LIGHT_NUM];
 		int renderMode = 0; // 0 - deferred lighting, 1 - position, 2 - normal
 		int sampleCount = 1;
+		float threshold = 0.5f;
+		bool enableSSAO = false;
 	} uboDeferredRendering;
 
 	/** random float generator */
@@ -863,8 +874,7 @@ private:
 		/*
 		* update camera
 		*/
-		glm::vec3 camPos = glm::vec3(5.f, 6.f, 20.f);
-		ubo.view = glm::lookAt(camPos, glm::vec3(0.f, 0.0f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
 		ubo.proj = glm::perspective(glm::radians(45.f),
 			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
@@ -876,7 +886,10 @@ private:
 		* update lights & renderMode
 		*/
 		uboDeferredRendering.sampleCount = sampleCount;
-		uboDeferredRendering.renderMode = static_cast<Imgui*>(imguiBase)->userInput.renderMode;
+		Imgui* imgui = static_cast<Imgui*>(imguiBase);
+		uboDeferredRendering.renderMode = imgui->userInput.renderMode;
+		uboDeferredRendering.threshold = imgui->userInput.threshold;
+		uboDeferredRendering.enableSSAO = imgui->userInput.enableSSAO;
 		float PI = 3.141592f;
 		float angleInc = 2 * PI / LIGHT_NUM;
 		for (int i = 0; i < LIGHT_NUM; ++i) {

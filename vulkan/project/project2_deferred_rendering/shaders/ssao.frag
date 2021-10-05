@@ -26,7 +26,7 @@ void main(){
 	vec3 fragPos = texelFetch(inPosition, UV, 0).xyz;
 	vec3 normal = texelFetch(inNormal, UV, 0).xyz;
 
-	vec3 randomVec = texture(ssaoNoise, inUV).xyz;
+	vec3 randomVec = texture(ssaoNoise, inUV * noiseScale).xyz;
 	vec3 tangent = normalize(randomVec - normal * dot(normal, randomVec)); //Gramm-Schmidt process
 	vec3 bitangent = cross(normal, tangent);
 	mat3 TBN = mat3(tangent, bitangent, normal);

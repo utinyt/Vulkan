@@ -1,6 +1,7 @@
 #include <fstream>
 #include <imgui/imgui.h>
 #include <algorithm>
+#include <glm/glm.hpp>
 #include "vulkan_app_base.h"
 #include "vulkan_debug.h"
 
@@ -11,6 +12,14 @@ bool enableValidationLayer = false;
 #else
 bool enableValidationLayer = true;
 #endif
+
+namespace {
+	bool captureMouse = false;
+}
+
+void toggleMouseCapture(GLFWwindow* window, int key, int scancode, int action, int modes) {
+
+}
 
 /*
 * app constructor
@@ -96,6 +105,7 @@ void VulkanAppBase::initWindow() {
 	window = glfwCreateWindow(width, height, appName.c_str(), nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
 	glfwSetFramebufferSizeCallback(window, windowResizeCallbck);
+	//glfwSetKeyCallback();
 	LOG("initialized:\tglfw");
 }
 
@@ -128,6 +138,55 @@ void VulkanAppBase::initVulkan() {
 }
 
 /*
+* update camera position & front vector
+*/
+void VulkanAppBase::updateCamera() {
+	//camera keyboard input
+	const float cameraSpeed = 0.05f; // adjust accordingly
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+		camera.camPos += cameraSpeed * camera.camFront;
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+		camera.camPos -= cameraSpeed * camera.camFront;
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+		camera.camPos -= glm::normalize(glm::cross(camera.camFront, camera.camUp)) * cameraSpeed;
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+		camera.camPos += glm::normalize(glm::cross(camera.camFront, camera.camUp)) * cameraSpeed;
+
+	//camera mouse input
+	static bool firstCam = true;
+	if (firstCam) {
+		oldXPos = xpos;
+		oldYPos = ypos;
+		firstCam = false;
+	}
+
+	float xoffset = static_cast<float>(xpos - oldXPos);
+	float yoffset = static_cast<float>(oldYPos - ypos);
+	oldXPos = xpos;
+	oldYPos = ypos;
+
+	float sensitivity = 0.1f;
+	xoffset *= sensitivity;
+	yoffset *= sensitivity;
+
+	yaw += xoffset;
+	pitch += yoffset;
+
+	if (pitch > 89.f) {
+		pitch = 89.f;
+	}
+	if (pitch < -89.f) {
+		pitch = -89.f;
+	}
+
+	glm::vec3 dir;
+	dir.x = std::cos(glm::radians(yaw)) * std::cos(glm::radians(pitch));
+	dir.y = std::sin(glm::radians(pitch));
+	dir.z = std::sin(glm::radians(yaw)) * std::cos(glm::radians(pitch));
+	camera.camFront = glm::normalize(dir);
+}
+
+/*
 * basic application setup
 */
 void VulkanAppBase::initApp() {
@@ -146,6 +205,20 @@ void VulkanAppBase::update() {
 	glfwGetCursorPos(window, &xpos, &ypos);
 	leftPressed		= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
 	rightPressed	= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+
+	//update camera only when mouse is captured
+	static int oldState = GLFW_RELEASE;
+	if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS && oldState == GLFW_RELEASE) {
+		captureMouse = !captureMouse;
+		glfwSetInputMode(window, GLFW_CURSOR, captureMouse ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+		oldState = GLFW_PRESS;
+	}
+	if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_RELEASE && oldState == GLFW_PRESS) {
+		oldState = GLFW_RELEASE;
+	}
+	if (captureMouse == true) {
+		updateCamera();
+	}
 
 	//imgui mouse info update
 	ImGuiIO& io = ImGui::GetIO();
