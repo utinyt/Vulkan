@@ -13,14 +13,6 @@ bool enableValidationLayer = false;
 bool enableValidationLayer = true;
 #endif
 
-namespace {
-	bool captureMouse = false;
-}
-
-void toggleMouseCapture(GLFWwindow* window, int key, int scancode, int action, int modes) {
-
-}
-
 /*
 * app constructor
 * 
@@ -142,7 +134,7 @@ void VulkanAppBase::initVulkan() {
 */
 void VulkanAppBase::updateCamera() {
 	//camera keyboard input
-	const float cameraSpeed = 0.05f; // adjust accordingly
+	const float cameraSpeed = 0.0005f; // adjust accordingly
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 		camera.camPos += cameraSpeed * camera.camFront;
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -391,7 +383,7 @@ void VulkanAppBase::createInstance() {
 	}
 
 	//fps counter
-	const char* lunargMonitor = "VK_LAYER_LUNARG_monitor";
+	/*const char* lunargMonitor = "VK_LAYER_LUNARG_monitor";
 
 	auto layerIt = std::find_if(availableLayers.begin(), availableLayers.end(),
 		[&lunargMonitor](const VkLayerProperties& properties) {
@@ -404,7 +396,7 @@ void VulkanAppBase::createInstance() {
 	else {
 		enabledLayerCount++;
 		enabledLayerNames.push_back(lunargMonitor);
-	}
+	}*/
 
 	instanceInfo.enabledLayerCount = enabledLayerCount;
 	instanceInfo.ppEnabledLayerNames = enabledLayerNames.data();

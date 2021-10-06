@@ -21,6 +21,9 @@
     <ClCompile Include="project2_deferred_rendering.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="project2_forward_rendering.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\full_quad.frag">
@@ -39,6 +42,12 @@
       <Filter>Source Files\shaders</Filter>
     </None>
     <None Include="shaders\ssao_blur.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\forward.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\forward.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
   </ItemGroup>

@@ -1,6 +1,6 @@
 #include <array>
 #include <chrono>
-#include <string>
+#include <random>
 #include <include/imgui/imgui.h>
 #include "core/vulkan_app_base.h"
 #include "core/vulkan_mesh.h"
@@ -10,6 +10,15 @@
 #include "core/vulkan_imgui.h"
 #include "core/vulkan_texture.h"
 #include "core/vulkan_pipeline.h"
+#include "core/vulkan_framebuffer.h"
+
+namespace {
+	std::random_device device;
+	std::mt19937_64 RNGen(device());
+	std::uniform_real_distribution<> rdFloat(0.0, 1.0);
+	const int LIGHT_NUM = 20;
+	const int INSTANCE_NUM_SQRT = 32;
+}
 
 class Imgui : public ImguiBase {
 public:
@@ -17,46 +26,22 @@ public:
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
-		ImGui::Text("MSAA");
-		static VkSampleCountFlagBits count = VK_SAMPLE_COUNT_1_BIT;
-		for (int sampleCount = 1; sampleCount <= static_cast<int>(devices->maxSampleCount); sampleCount <<= 1) {
-			std::string buttonStr = "x" + std::to_string(sampleCount);
-			ImGui::RadioButton(buttonStr.c_str(), reinterpret_cast<int*>(&count), sampleCount);
-			ImGui::SameLine();
-		}
-		if (count != userInput.currentSampleCount) {
-			userInput.currentSampleCount = count;
-			sampleCountChanged = true;
-			deferCommandBufferRecord = true;
-		}
-
 		ImGui::End();
 		ImGui::Render();
 	}
 
 	/* user input collection */
 	struct UserInput {
-		VkSampleCountFlagBits currentSampleCount = VK_SAMPLE_COUNT_1_BIT;
 	} userInput;
-
-	bool sampleCountChanged = false;
 };
 
 class VulkanApp : public VulkanAppBase {
 public:
-	/** uniform buffer object */
-	struct CameraMatrices {
-		glm::mat4 model;
-		glm::mat4 view;
-		glm::mat4 normalMatrix;
-		glm::mat4 proj;
-	};
-
 	/*
 	* constructor - get window size & title
 	*/
 	VulkanApp(int width, int height, const std::string& appName)
-		: VulkanAppBase(width, height, appName, VK_SAMPLE_COUNT_1_BIT) {
+		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
 	}
 
@@ -80,16 +65,20 @@ public:
 			devices.memoryAllocator.freeBufferMemory(cameraUBO[i],
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 			vkDestroyBuffer(devices.device, cameraUBO[i], nullptr);
+			devices.memoryAllocator.freeBufferMemory(lightUBO[i],
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			vkDestroyBuffer(devices.device, lightUBO[i], nullptr);
 		}
 
-		//skybox textures
-		skyboxTexture.cleanup();
-		
-		//model & skybox buffers
+		//model & floor buffers
 		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
-		devices.memoryAllocator.freeBufferMemory(skyboxBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, skyboxBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(floorBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, floorBuffer, nullptr);
+
+		//instanced position buffer
+		devices.memoryAllocator.freeBufferMemory(instancedTransformationBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, instancedTransformationBuffer, nullptr);
 
 		//framebuffers
 		for (auto& framebuffer : framebuffers) {
@@ -97,7 +86,6 @@ public:
 		}
 
 		//pipelines & render pass
-		vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 		vkDestroyPipeline(devices.device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
@@ -107,23 +95,22 @@ public:
 	* application initialization - also contain base class initApp()
 	*/
 	virtual void initApp() override {
+		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 		VulkanAppBase::initApp();
 
 		//init cam setting
-		camera.camPos = glm::vec3(1.f, 1.f, 2.f);
+		camera.camPos = glm::vec3(5.f, 5.f, 20.f);
 		camera.camFront = -camera.camPos;
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
 		//mesh loading & buffer creation
 		model.load("../../meshes/bunny.obj");
 		modelBuffer = model.createModelBuffer(&devices);
+		floor.load("../../meshes/cube.obj");
+		floorBuffer = floor.createModelBuffer(&devices);
 
-		//skybox model loading & buffer creation
-		skybox.load("../../meshes/cube.obj");
-		skyboxBuffer = skybox.createModelBuffer(&devices);
-
-		//skybox texture load
-		skyboxTexture.load(&devices, "../../textures/skybox");
+		//instance possition buffer
+		createInstancePositionBuffer();
 
 		//render pass
 		createRenderPass();
@@ -145,10 +132,34 @@ public:
 	}
 
 private:
+	/** uniform buffer object */
+	struct CameraMatrices {
+		glm::mat4 view;
+		glm::mat4 normalMatrix;
+		glm::mat4 proj;
+	} ubo;
+
+	/** Light struct */
+	struct Light {
+		glm::vec4 pos;
+		glm::vec3 color;
+		float radius;
+	};
+
+	/** ubo for deferred rendering */
+	struct LightInfo {
+		Light lights[LIGHT_NUM];
+		int sampleCount = 1;
+	} lightInfo;
+
+	/** random float generator */
+	std::random_device rd;
+	std::mt19937 mt;
+
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE;
+	VkPipeline pipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
@@ -168,14 +179,24 @@ private:
 	std::vector<VkBuffer> cameraUBO;
 	/**  uniform buffer memory handle */
 	std::vector<MemoryAllocator::HostVisibleMemory> cameraUBOMemories;
+	/** uniform buffer handle */
+	std::vector<VkBuffer> lightUBO;
+	/** uniform buffer memory handle */
+	std::vector<MemoryAllocator::HostVisibleMemory> lightUBOMemories;
+
 	/** abstracted 3d mesh */
-	Mesh model, skybox;
+	Mesh model, floor;
 	/** model vertex & index buffer */
-	VkBuffer modelBuffer;
-	/** skybox vertex & index buffer */
-	VkBuffer skyboxBuffer;
-	/** skybox texture */
-	TextureCube skyboxTexture;
+	VkBuffer modelBuffer, floorBuffer;
+
+	/** instanced model positions */
+	struct Transformation {
+		glm::vec3 pos;
+		glm::vec3 scale;
+	};
+	std::vector<Transformation> instancedTransformation;
+	/** buffer for instancePos */
+	VkBuffer instancedTransformationBuffer = VK_NULL_HANDLE;
 
 	/*
 	* called every frame - submit queues
@@ -183,7 +204,6 @@ private:
 	virtual void draw() override {
 		uint32_t imageIndex = prepareFrame();
 
-		//render
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -205,17 +225,73 @@ private:
 	*/
 	void update() override {
 		VulkanAppBase::update();
-
-		//imgui update
-		if (Imgui* imgui = static_cast<Imgui*>(imguiBase); imgui->sampleCountChanged == true) {
-			imgui->sampleCountChanged = false;
-			imgui->deferCommandBufferRecord = false;
-			sampleCount = imgui->userInput.currentSampleCount;
-			changeMultisampleResources();
-		}
-
-		//uniform buffer
 		updateUniformBuffer(currentFrame);
+	}
+
+	/*
+	* override resize function - update offscreen resources
+	*/
+	void resizeWindow(bool /*recordCommandBuffer*/) override {
+		VulkanAppBase::resizeWindow(false);
+		updateDescriptorSets();
+		recordCommandBuffer();
+	}
+
+	/*
+	* create a buffer for instanced model positions
+	*/
+	void createInstancePositionBuffer() {
+		instancedTransformation.push_back({ glm::vec3(0.f, 0.f, 0.f), glm::vec3(50.f, 1.f, 50.f) }); //floor
+		if (INSTANCE_NUM_SQRT != 1) {
+			int start = -INSTANCE_NUM_SQRT / 2;
+			for (int col = start; col < -start; ++col) {
+				for (int row = start; row < -start; ++row) {
+					instancedTransformation.push_back({
+						glm::vec3(col * 1.5, 0.5f, row * 1.5),
+						glm::vec3(1.f, 1.f, 1.f)
+						});
+				}
+			}
+		}
+		else {
+			instancedTransformation.push_back({
+						glm::vec3(0, 0.5f, 0.f),
+						glm::vec3(1.f, 1.f, 1.f)
+				});
+		}
+		
+
+		instancedTransformation.shrink_to_fit();
+
+		VkDeviceSize bufferSize = sizeof(instancedTransformation[0]) * instancedTransformation.size();
+
+		//create staging buffer
+		VkBuffer stagingBuffer;
+		VkBufferCreateInfo stagingBufferCreateInfo = vktools::initializers::bufferCreateInfo(
+			bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &stagingBufferCreateInfo, nullptr, &stagingBuffer));
+
+		//suballocate
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		MemoryAllocator::HostVisibleMemory hostVisibleMemory = devices.memoryAllocator.allocateBufferMemory(
+			stagingBuffer, properties);
+
+		hostVisibleMemory.mapData(devices.device, instancedTransformation.data());
+
+		//create vertex & index buffer
+		VkBufferCreateInfo bufferCreateInfo = vktools::initializers::bufferCreateInfo(
+			bufferSize,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bufferCreateInfo, nullptr, &instancedTransformationBuffer));
+
+		//suballocation
+		devices.memoryAllocator.allocateBufferMemory(instancedTransformationBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		//host visible -> device local
+		devices.copyBuffer(devices.commandPool, stagingBuffer, instancedTransformationBuffer, bufferSize);
+
+		devices.memoryAllocator.freeBufferMemory(stagingBuffer, properties);
+		vkDestroyBuffer(devices.device, stagingBuffer, nullptr);
 	}
 
 	/*
@@ -239,7 +315,7 @@ private:
 		//swapchain present attachment
 		attachments[0].format = swapchain.surfaceFormat.format;
 		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		attachments[0].loadOp = isCurrentSampleCount1 ? 
+		attachments[0].loadOp = isCurrentSampleCount1 ?
 			VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -277,7 +353,7 @@ private:
 			colorRef.attachment = 2;
 			colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
-		
+
 		//subpass
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -314,58 +390,37 @@ private:
 	void createPipeline() {
 		if (pipeline != VK_NULL_HANDLE) {
 			vkDestroyPipeline(devices.device, pipeline, nullptr);
-			vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 			vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 			pipeline = VK_NULL_HANDLE;
-			skyboxPipeline = VK_NULL_HANDLE;
 			pipelineLayout = VK_NULL_HANDLE;
 		}
 
-		/*
-		* pipeline for main model
-		*/
+		//model descriptions
 		auto bindingDescription = model.getBindingDescription();
 		auto attributeDescription = model.getAttributeDescriptions();
+		//instanced position descriptions
+		VkVertexInputBindingDescription instancedPosBindingDesc{1, sizeof(Transformation), VK_VERTEX_INPUT_RATE_INSTANCE};
+		attributeDescription.push_back({ 2, 1, VK_FORMAT_R32G32B32_SFLOAT, 0 });
+		attributeDescription.push_back({ 3, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(glm::vec3) });
 
+		/*
+		* full screen quad pipeline
+		*/
 		PipelineGenerator gen(devices.device);
-		gen.setColorBlendInfo(VK_FALSE);
+		gen.setColorBlendInfo(VK_FALSE, 1);
 		gen.setMultisampleInfo(sampleCount);
-		gen.addVertexInputBindingDescription({ bindingDescription });
+		gen.addVertexInputBindingDescription({ bindingDescription, instancedPosBindingDesc });
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_vert.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/forward_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/forward_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
-		//reset shader & vertex description settings to reuse pipeline generator
-		gen.resetShaderVertexDescriptions();
-
-
-		/*
-		* pipeline for skybox
-		*/
-		bindingDescription = skybox.getBindingDescription();
-		attributeDescription = skybox.getAttributeDescriptions();
-
-		gen.setMultisampleInfo(sampleCount, VK_TRUE, 0.2f);
-		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
-		gen.addVertexInputBindingDescription({ bindingDescription });
-		gen.addVertexInputAttributeDescription(attributeDescription);
-		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
-			VK_SHADER_STAGE_VERTEX_BIT);
-		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
-			VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		//generate skybox pipeline
-		gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -383,12 +438,11 @@ private:
 			std::vector<VkImageView> attachments;
 			attachments.push_back(swapchain.imageViews[i]);
 			attachments.push_back(depthImageView);
+			attachments.shrink_to_fit();
 
 			if (sampleCount != VK_SAMPLE_COUNT_1_BIT) {
 				attachments.push_back(multisampleColorImageView);
 			}
-
-			attachments.shrink_to_fit();
 
 			VkFramebufferCreateInfo framebufferInfo{};
 			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -422,7 +476,6 @@ private:
 			clearValues[1].depthStencil = { 1.f, 0 };
 			clearValues[2].color = clearColor;
 		}
-
 		clearValues.shrink_to_fit();
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
@@ -436,39 +489,32 @@ private:
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			size_t framebufferIndex = i % framebuffers.size();
 			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
-
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 			//dynamic states
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
-			/*
-			* draw model 
-			*/
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 			size_t descriptorSetIndex = i / framebuffers.size();
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
 			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &floorBuffer, offsets);
+			vkCmdBindVertexBuffers(commandBuffers[i], 1, 1, &instancedTransformationBuffer, offsets);
+			VkDeviceSize indexBufferOffset = floor.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], floorBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(floor.indices.size()), 1, 0, 0, 0);
+
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &modelBuffer, offsets);
-			VkDeviceSize indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
+			offsets[0] = sizeof(Transformation);
+			vkCmdBindVertexBuffers(commandBuffers[i], 1, 1, &instancedTransformationBuffer, offsets);
+			indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
 			vkCmdBindIndexBuffer(commandBuffers[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), 1, 0, 0, 0);
-
-			/*
-			* draw skybox
-			*/
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-				&descriptorSets[descriptorSetIndex], 0, nullptr);
-
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skyboxBuffer, offsets);
-			indexBufferOffset = skybox.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(commandBuffers[i], skyboxBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), INSTANCE_NUM_SQRT * INSTANCE_NUM_SQRT, 0, 0, 0);
 			
+
 			/*
 			* imgui
 			*/
@@ -485,17 +531,37 @@ private:
 	* create MAX_FRAMES_IN_FLIGHT of ubos
 	*/
 	void createUniformBuffers() {
-		VkDeviceSize bufferSize = sizeof(CameraMatrices);
+		VkDeviceSize cameraUBOSize = sizeof(CameraMatrices);
 		cameraUBO.resize(MAX_FRAMES_IN_FLIGHT);
 		cameraUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize lightUBOSize = sizeof(LightInfo);
+		lightUBO.resize(MAX_FRAMES_IN_FLIGHT);
+		lightUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
 
-		VkBufferCreateInfo uniformBufferCreateInfo = vktools::initializers::bufferCreateInfo(
-			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo cameraUBOCreateInfo = vktools::initializers::bufferCreateInfo(
+			cameraUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo lightUBOCreateInfo = vktools::initializers::bufferCreateInfo(
+			lightUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &uniformBufferCreateInfo, nullptr, &cameraUBO[i]));
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &cameraUBOCreateInfo, nullptr, &cameraUBO[i]));
 			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
 					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &lightUBOCreateInfo, nullptr, &lightUBO[i]));
+			lightUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
+				lightUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		}
+
+		//assign color & radius
+		for (int i = 0; i < LIGHT_NUM; ++i) {
+			lightInfo.lights[i].color = glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen));
+			float constant = 1.f;
+			float linear = 0.7f;
+			float quadratic = 1.8f;
+			float lightMax = std::fmaxf(std::fmaxf(lightInfo.lights[i].color.x,
+				lightInfo.lights[i].color.y), lightInfo.lights[i].color.z);
+			lightInfo.lights[i].radius = (-linear + std::sqrtf(
+				linear * linear - 4 * quadratic * (constant - (256 / 5.f) * lightMax)) / (2 * quadratic));
 		}
 	}
 
@@ -509,25 +575,38 @@ private:
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 		
-		CameraMatrices ubo{};
-		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
+		/*
+		* update camera
+		*/
 		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
-		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
+		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
 		ubo.proj = glm::perspective(glm::radians(45.f),
-			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
+			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
 		ubo.proj[1][1] *= -1;
 
 		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
+
+		/*
+		* update lights & renderMode
+		*/
+		lightInfo.sampleCount = sampleCount;
+		float PI = 3.141592f;
+		float angleInc = 2 * PI / LIGHT_NUM;
+		for (int i = 0; i < LIGHT_NUM; ++i) {
+			lightInfo.lights[i].pos =
+				glm::vec4(12 * std::cos(time / 3 + i * angleInc), 3.f, 12 * std::sin(time / 3 + i * angleInc), 1.f);
+			lightInfo.lights[i].pos = ubo.view * lightInfo.lights[i].pos; // light position in view space
+		}
+		lightUBOMemories[currentFrame].mapData(devices.device, &lightInfo);
 	}
 
 	/*
 	* set descriptor bindings & allocate destcriptor sets
 	*/
 	void createDescriptorSet() {
-		//descriptor - 1 uniform buffer
+		//descriptor - 2 uniform buffers
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		//descriptor - 1 image sampler (skybox)
-		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -537,46 +616,19 @@ private:
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
-
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VkDescriptorBufferInfo bufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
-			std::vector<VkWriteDescriptorSet> writes = {
-				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
-				bindings.makeWrite(descriptorSets[i], 1, &skyboxTexture.descriptor)
-			};
+			//camera matrices
+			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
+			//light info
+			VkDescriptorBufferInfo lightInfoBufferInfo{ lightUBO[i], 0, sizeof(LightInfo) };
+
+			std::vector<VkWriteDescriptorSet> writes;
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &cameraUBObufferInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &lightInfoBufferInfo));
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
-	}
-
-	/*
-	* change all resource related to multusampling
-	*/
-	void changeMultisampleResources() {
-		//finish all command before destroy vk resources
-		vkDeviceWaitIdle(devices.device);
-
-		//depth stencil image
-		destroyDepthStencilImage();
-		createDepthStencilImage(sampleCount);
-		//multisample color buffer
-		destroyMultisampleColorBuffer();
-		createMultisampleColorBuffer(sampleCount);
-
-		//render pass
-		createRenderPass();
-		//pipeline
-		createPipeline();
-		//framebuffer
-		createFramebuffers();
-
-		//imgui pipeline
-		imguiBase->createPipeline(renderPass, sampleCount);
-
-		//command buffer
-		resetCommandBuffer();
-		recordCommandBuffer();
 	}
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project1");
+RUN_APPLICATION_MAIN(VulkanApp, 1200, 800, "project2");

@@ -145,9 +145,8 @@ public:
 	* application initialization - also contain base class initApp()
 	*/
 	virtual void initApp() override {
-		sampleCount = VK_SAMPLE_COUNT_1_BIT;
 		VulkanAppBase::initApp();
-		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
+		sampleCount = static_cast<VkSampleCountFlagBits>(VK_SAMPLE_COUNT_1_BIT);
 
 		//init cap setting
 		camera.camPos = glm::vec3(5.f, 5.f, 20.f);
@@ -196,7 +195,7 @@ public:
 		updateDescriptorSets();
 		//imgui
 		imguiBase->init(&devices, swapchain.extent.width, swapchain.extent.height,
-			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
+			renderPass, MAX_FRAMES_IN_FLIGHT, sampleCount);
 		//record command buffer
 		recordCommandBuffer();
 		//create & record offscreen command buffer
@@ -374,7 +373,6 @@ private:
 		VulkanAppBase::resizeWindow(false);
 		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 
-		createSSAORenderPassFramebuffer(true);
 		createOffscreenRenderPassFramebuffer(true); //no need to recreate renderpass
 		updateDescriptorSets();
 		recordCommandBuffer();
@@ -767,35 +765,35 @@ private:
 			/*
 			* ssao occlusion render - full screem quad
 			*/
-			renderPassBeginInfo.renderPass = ssaoRenderPass;
-			renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
-			renderPassBeginInfo.clearValueCount = 1;
-			renderPassBeginInfo.pClearValues = ssaoClearValues.data();
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			//renderPassBeginInfo.renderPass = ssaoRenderPass;
+			//renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
+			//renderPassBeginInfo.clearValueCount = 1;
+			//renderPassBeginInfo.pClearValues = ssaoClearValues.data();
+			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			//dynamic states
-			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+			////dynamic states
+			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
-				&ssaoDescriptorSet, 0, nullptr);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			vkCmdEndRenderPass(commandBuffers[i]);
+			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
+			//	&ssaoDescriptorSet, 0, nullptr);
+			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			//vkCmdEndRenderPass(commandBuffers[i]);
 
-			/*
-			* ssao blur - full screen quad
-			*/
-			renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			///*
+			//* ssao blur - full screen quad
+			//*/
+			//renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
+			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			//dynamic states
-			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+			////dynamic states
+			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
-				&ssaoBlurDescriptorSet, 0, nullptr);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			vkCmdEndRenderPass(commandBuffers[i]);
+			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
+			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
+			//	&ssaoBlurDescriptorSet, 0, nullptr);
+			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			//vkCmdEndRenderPass(commandBuffers[i]);
 
 			/*
 			* final - lighting calculation in full screen quad
@@ -946,7 +944,7 @@ private:
 		//descriptor - 3 image samplers
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		//bindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		//descriptor - 1 uniform buffer
 		bindings.addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
@@ -976,7 +974,7 @@ private:
 			writes.push_back(offscreenBindings.makeWrite(offscreenDescriptorSets[i], 0, &cameraUBObufferInfo));
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &posAttachmentInfo));
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &normalAttachmentInfo));
-			writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &ssaoBlurAttachmentInfo));
+			//writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &ssaoBlurAttachmentInfo));
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 3, &deferredUBObufferInfo));
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}

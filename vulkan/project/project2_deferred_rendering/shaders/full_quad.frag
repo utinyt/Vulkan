@@ -58,6 +58,26 @@ void main(){
 	ivec2 UV = ivec2(textureSize(normal) * inUV);
 	col = vec4(1.f);
 
+	bool edge = true;
+
+	vec3 center = texelFetch(normal, UV, 0).xyz;
+	vec3 top = texelFetch(normal, UV + ivec2(0, 1), 0).xyz; 
+	vec3 left = texelFetch(normal, UV + ivec2(-1, 0), 0).xyz; 
+	vec3 right = texelFetch(normal, UV + ivec2(1, 0), 0).xyz; 
+	vec3 bottom = texelFetch(normal, UV + ivec2(0, -1), 0).xyz;
+
+	float normalDiffTop = length(center - top);
+	float normalDiffLeft = length(center - left);
+	float normalDiffRight = length(center - right);
+	float normalDiffBottom = length(center - bottom);
+
+	if(normalDiffTop < ubo.threshold &&
+		normalDiffLeft < ubo.threshold &&
+		normalDiffRight < ubo.threshold &&
+		normalDiffBottom < ubo.threshold){
+		edge = false;
+	}
+
 	//debug render
 	switch(ubo.renderMode){
 	case 1: //position
@@ -68,39 +88,24 @@ void main(){
 		col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
 	case 4: //edge detection
 	{
-		vec3 center = texelFetch(normal, UV, 0).xyz;
-		vec3 top = texelFetch(normal, UV + ivec2(0, 1), 0).xyz; 
-		vec3 left = texelFetch(normal, UV + ivec2(-1, 0), 0).xyz; 
-		vec3 right = texelFetch(normal, UV + ivec2(1, 0), 0).xyz; 
-		vec3 bottom = texelFetch(normal, UV + ivec2(0, -1), 0).xyz;
-
-		float normalDiffTop = length(center - top);
-		float normalDiffLeft = length(center - left);
-		float normalDiffRight = length(center - right);
-		float normalDiffBottom = length(center - bottom);
-
-		if(normalDiffTop < ubo.threshold &&
-			normalDiffLeft < ubo.threshold &&
-			normalDiffRight < ubo.threshold &&
-			normalDiffBottom < ubo.threshold){
+		if(edge == false)
 			col = vec4(0.f, 0.f, 0.f, 1.f); //black - not edge
-		}
-		else{
+		else
 			col = vec4(1.f, 1.f, 1.f, 1.f); //white - edge
-		}
 		return;
 	}
 	}
 
 	//light calculation
 	vec3 lighting = vec3(0.f);
-	for(int i = 0; i < ubo.sampleCount; ++i){
+	int iteration = edge ? ubo.sampleCount : 1;
+	for(int i = 0; i < iteration ; ++i){
 		vec4 samplePos = texelFetch(position, UV, i);
 		vec3 pos = samplePos.xyz;
 		vec3 normal = normalize(texelFetch(normal, UV, i).xyz);
 		lighting += CalculateLighting(pos, normal) * samplePos.a;
 	}
-	lighting /= float(ubo.sampleCount);
+	lighting /= float(iteration );
 
 	float AO = 0.f;
 	for(int i = 0; i < ubo.sampleCount; ++i)
