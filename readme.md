@@ -21,11 +21,11 @@ A lot of code were based on these great resources:
 * [LearnOpenGL by Joey de Vries](https://learnopengl.com)
 
 ## Updates
-## Deferred Rendering + SSAO & MSAA - (OCT.05.2021)
+## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
 ![deferred_rendering ssao](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_ssao.png)<br>
 
-###Optimization #1
+### Optimization #1
 ![deferred_rendering edge detection](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_edge_detection.png)<br>
 Used edge detection (comparing neighborhood normal vectors) to only apply msaa to the pixels on edges<br>
 Framerate incrased from 172 to 198<br>
