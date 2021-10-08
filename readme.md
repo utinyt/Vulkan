@@ -22,6 +22,7 @@ A lot of code were based on these great resources:
 
 ## Updates
 ## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
+<video src='https://youtu.be/CDU1MrpubUw' width=180/><br>
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
 ![deferred_rendering ssao](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_ssao.png)<br>
 ### Scene setup
