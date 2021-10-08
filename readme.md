@@ -46,7 +46,7 @@ Framerate incrased (172 -> 198), but further optimization is needed since "edge 
 
 ## Skybox & environment (reflection) mapping - (Sep.16.2021)
 ![skybox](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/skybox.gif)<br>
-#### Used skybox textures from: http://www.humus.name/index.php?page=Textures&start=8
+#### Skybox textures from: http://www.humus.name/index.php?page=Textures&start=8
 <br>
 
 ## Initial framework - (Sep.06.2021)
