@@ -1,5 +1,6 @@
 #include <set>
 #include <algorithm>
+#include <string>
 #include "vulkan_device.h"
 
 /*
@@ -47,6 +48,7 @@ void VulkanDevice::pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface,
 
 	//for anti-aliasing
 	maxSampleCount = getMaxSampleCount();
+	LOG("maximum sample count:\t" + std::to_string(maxSampleCount));
 
 	//check if current device support VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT memory type
 	for (uint32_t memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; ++memoryTypeIndex) {

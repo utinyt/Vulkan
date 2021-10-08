@@ -6,4 +6,6 @@
 ..\..\glslc.exe ssao_blur.frag -o ssao_blur_frag.spv 
 ..\..\glslc.exe forward.vert -o forward_vert.spv
 ..\..\glslc.exe forward.frag -o forward_frag.spv
+..\..\glslc.exe skybox.vert -o skybox_vert.spv
+..\..\glslc.exe skybox.frag -o skybox_frag.spv
 pause

@@ -116,4 +116,8 @@ void main(){
 		lighting *= pow(AO, 2);
 
 	col = vec4(lighting, 1.f);
+
+//	if(length(texelFetch(normal, UV, 0)) == 0){
+//		col = vec4(1.f, 0, 0, 1.f);
+//	}
 }

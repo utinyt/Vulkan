@@ -103,11 +103,16 @@ public:
 		vkDestroyBuffer(devices.device, ssaoKernelUBO, nullptr);
 		ssaoNoiseTex.cleanup();
 
-		//model & floor buffers
+		//skybox textures
+		skyboxTexture.cleanup();
+
+		//model & floor buffer & skybox buffers
 		devices.memoryAllocator.freeBufferMemory(modelBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, modelBuffer, nullptr);
 		devices.memoryAllocator.freeBufferMemory(floorBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		vkDestroyBuffer(devices.device, floorBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(skyboxBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, skyboxBuffer, nullptr);
 
 		//instanced position buffer
 		devices.memoryAllocator.freeBufferMemory(instancedTransformationBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -127,6 +132,7 @@ public:
 		vkDestroyPipelineLayout(devices.device, ssaoPipelineLayout, nullptr);
 		vkDestroyPipeline(devices.device, ssaoBlurPipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, ssaoBlurPipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
 		vkDestroyRenderPass(devices.device, offscreenRenderPass, nullptr);
 		offscreenFramebuffer.cleanup();
@@ -159,6 +165,13 @@ public:
 		modelBuffer = model.createModelBuffer(&devices);
 		floor.load("../../meshes/cube.obj");
 		floorBuffer = floor.createModelBuffer(&devices);
+
+		//skybox model loading & buffer creation
+		skybox.load("../../meshes/cube.obj");
+		skyboxBuffer = skybox.createModelBuffer(&devices);
+
+		//skybox texture load
+		skyboxTexture.load(&devices, "../../textures/skybox");
 
 		//ssao sample kernel uniform & noise images
 		createSSAOResources();
@@ -234,7 +247,7 @@ private:
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline = VK_NULL_HANDLE;
+	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
@@ -266,9 +279,11 @@ private:
 	Texture2D ssaoNoiseTex;
 
 	/** abstracted 3d mesh */
-	Mesh model, floor;
+	Mesh model, floor, skybox;
 	/** model vertex & index buffer */
-	VkBuffer modelBuffer, floorBuffer;
+	VkBuffer modelBuffer, floorBuffer, skyboxBuffer;
+	/** skybox texture */
+	TextureCube skyboxTexture;
 
 	/*
 	* offscreen resources
@@ -704,6 +719,28 @@ private:
 
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
+		gen.resetAll();
+
+		/*
+		* pipeline for skybox
+		*/
+		//bindingDescription = skybox.getBindingDescription();
+		//attributeDescription = skybox.getAttributeDescriptions();
+
+		//gen.setMultisampleInfo(sampleCount, VK_TRUE, 0.2f);
+		//gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		//gen.addVertexInputBindingDescription({ bindingDescription });
+		//gen.addVertexInputAttributeDescription(attributeDescription);
+		//gen.addShader(
+		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
+		//	VK_SHADER_STAGE_VERTEX_BIT);
+		//gen.addShader(
+		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
+		//	VK_SHADER_STAGE_FRAGMENT_BIT);
+
+		////generate skybox pipeline
+		//gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -877,7 +914,9 @@ private:
 		static auto startTime = std::chrono::high_resolution_clock::now();
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-		
+		dt = time - oldTime;
+		oldTime = time;
+
 		/*
 		* update camera
 		*/

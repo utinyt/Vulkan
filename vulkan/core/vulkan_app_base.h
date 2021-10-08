@@ -96,6 +96,8 @@ protected:
 		glm::vec3 camUp = glm::vec3(0, 1, 0);
 	} camera;
 
+	float dt = 0, oldTime = 0;
+
 private:
 	double oldXPos = 0, oldYPos = 0;
 	float yaw = -90.f, pitch = 0;

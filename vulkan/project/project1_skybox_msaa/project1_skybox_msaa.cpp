@@ -508,7 +508,9 @@ private:
 		static auto startTime = std::chrono::high_resolution_clock::now();
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-		
+		dt = time - oldTime;
+		oldTime = time;
+
 		CameraMatrices ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
 		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
