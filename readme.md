@@ -24,7 +24,13 @@ A lot of code were based on these great resources:
 ## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
 ![deferred_rendering ssao](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_ssao.png)<br>
-
+### Scene setup
+* 20 point lights
+* 1024 bunnies - instanced rendering
+* Screen resolution 1200x800
+* MSAA applied (maximum sample count supported by current device)
+<br>
+  
 ### Optimization #1
 ![deferred_rendering edge detection](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_edge_detection.png)<br>
 Used edge detection (comparing neighborhood normal vectors) to only apply msaa to the pixels on edges<br>
