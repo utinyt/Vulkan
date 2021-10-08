@@ -35,6 +35,7 @@ Youtube link : https://youtu.be/CDU1MrpubUw
 ![deferred_rendering edge detection](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_edge_detection.png)<br>
 Used edge detection (comparing neighborhood normal vectors) to only apply msaa to the pixels on edges<br>
 Framerate incrased from 172 to 198<br>
+but further optimization is needed since "edge pixels" and "non-edge pixels" are computed in one pass, which leads to thread coherence problem.<br>
 #### Reference : [Antialiased Deferred Rendering by NVIDIA Gameworks](https://docs.nvidia.com/gameworks/content/gameworkslibrary/graphicssamples/d3d_samples/antialiaseddeferredrendering.htm)<br>
 <br>
 
