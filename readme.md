@@ -22,9 +22,10 @@ A lot of code were based on these great resources:
 
 ## Updates
 ## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
-<video src='https://www.youtube.com/embed/CDU1MrpubUw' width=180/>
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
-![deferred_rendering ssao](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_ssao.png)<br>
+Youtube link : https://youtu.be/CDU1MrpubUw
+<br>
+
 ### Scene setup
 * 20 point lights
 * 1024 bunnies - instanced rendering
