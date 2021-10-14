@@ -205,6 +205,7 @@ namespace vktools {
 		std::vector<VkAttachmentDescription> allAttachments;
 		std::vector<VkAttachmentReference> colorAttachmentsRef;
 		bool hasDepth = (depthAttachmentFormat != VK_FORMAT_UNDEFINED);
+		bool hasStencil = vktools::hasStencilComponent(depthAttachmentFormat);
 		bool multisampling = sampleCount != VK_SAMPLE_COUNT_1_BIT;
 
 		//color attachments
@@ -237,8 +238,8 @@ namespace vktools {
 			depthAttachment.samples			= sampleCount;
 			depthAttachment.loadOp			= clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			depthAttachment.storeOp			= VK_ATTACHMENT_STORE_OP_STORE;
-			depthAttachment.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			depthAttachment.stencilStoreOp	= VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			depthAttachment.stencilLoadOp	= hasStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			depthAttachment.stencilStoreOp	= hasStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			depthAttachment.initialLayout	= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			depthAttachment.finalLayout		= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 

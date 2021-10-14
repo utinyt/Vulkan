@@ -92,8 +92,9 @@
   <ItemGroup>
     <None Include="shaders\forward.frag" />
     <None Include="shaders\forward.vert" />
-    <None Include="shaders\full_quad.frag" />
     <None Include="shaders\full_quad.vert" />
+    <None Include="shaders\full_quad_complex.frag" />
+    <None Include="shaders\full_quad_normal.frag" />
     <None Include="shaders\gbuffer.frag" />
     <None Include="shaders\gbuffer.vert" />
     <None Include="shaders\ssao.frag" />

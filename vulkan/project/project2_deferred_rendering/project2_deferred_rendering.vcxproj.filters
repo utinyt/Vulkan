@@ -26,9 +26,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\full_quad.frag">
-      <Filter>Source Files\shaders</Filter>
-    </None>
     <None Include="shaders\full_quad.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
@@ -48,6 +45,12 @@
       <Filter>Source Files\shaders</Filter>
     </None>
     <None Include="shaders\forward.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\full_quad_normal.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\full_quad_complex.frag">
       <Filter>Source Files\shaders</Filter>
     </None>
   </ItemGroup>

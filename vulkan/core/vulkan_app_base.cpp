@@ -502,7 +502,7 @@ void VulkanAppBase::createPipelineCache() {
 */
 void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 	depthFormat = vktools::findSupportedFormat(devices.physicalDevice,
-		{VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+		{ VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT},
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
@@ -515,12 +515,20 @@ void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 		sampleCount
 	);
 
+	VkImageAspectFlags aspectMask = 0;
+	if (vktools::hasDepthComponent(depthFormat)) {
+		aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+	}
+	if (vktools::hasStencilComponent(depthFormat)) {
+		aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	}
+
 	depthImageView = vktools::createImageView(devices.device, depthImage,
-		VK_IMAGE_VIEW_TYPE_2D, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+		VK_IMAGE_VIEW_TYPE_2D, depthFormat, aspectMask);
 
 	VkCommandBuffer cmdBuf = devices.beginCommandBuffer();
 	vktools::setImageLayout(cmdBuf, depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
-		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1});
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, { aspectMask, 0, 1, 0, 1});
 	devices.endCommandBuffer(cmdBuf);
 
 	LOG("created:\tdepth stencil image");

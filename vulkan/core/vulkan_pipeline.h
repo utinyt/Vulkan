@@ -42,6 +42,11 @@ public:
 	void generate(VkRenderPass renderPass,
 		VkPipeline* outPipeline, VkPipelineLayout* outPipelineLayout);
 
+	/** @brief struct getters */
+	VkPipelineDepthStencilStateCreateInfo& getPipelineDepthStencilStateCreateInfo() {
+		return depthStencilStateCreateInfo;
+	}
+
 private:
 	/** logical device handle */
 	VkDevice device = VK_NULL_HANDLE;

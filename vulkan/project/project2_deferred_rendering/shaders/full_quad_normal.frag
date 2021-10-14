@@ -6,7 +6,7 @@ layout(location = 0) out vec4 col;
 
 layout(binding = 0) uniform sampler2DMS position;
 layout(binding = 1) uniform sampler2DMS normal;
-layout(binding = 2) uniform sampler2DMS ssaoBlur;
+//layout(binding = 2) uniform sampler2DMS ssaoBlur;
 
 #define LIGHT_NUM 20
 
@@ -58,7 +58,7 @@ void main(){
 	ivec2 UV = ivec2(textureSize(normal) * inUV);
 	col = vec4(1.f);
 
-	bool edge = true;
+	int notEdge = 0;
 
 	vec3 center = texelFetch(normal, UV, 0).xyz;
 	vec3 top = texelFetch(normal, UV + ivec2(0, 1), 0).xyz; 
@@ -71,12 +71,11 @@ void main(){
 	float normalDiffRight = length(center - right);
 	float normalDiffBottom = length(center - bottom);
 
-	if(normalDiffTop < ubo.threshold &&
-		normalDiffLeft < ubo.threshold &&
-		normalDiffRight < ubo.threshold &&
-		normalDiffBottom < ubo.threshold){
-		edge = false;
-	}
+	notEdge += int(normalDiffTop < ubo.threshold);
+	notEdge += int(normalDiffLeft < ubo.threshold);
+	notEdge += int(normalDiffRight < ubo.threshold);
+	notEdge += int(normalDiffBottom < ubo.threshold);
+	notEdge /= 4; // 1 if not edge, 0 if it is
 
 	//debug render
 	switch(ubo.renderMode){
@@ -85,39 +84,22 @@ void main(){
 	case 2: //normal
 		col = vec4(texelFetch(normal, UV, 0).xyz, 1.f); return;
 	case 3: //ssao
-		col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
+		//col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
 	case 4: //edge detection
-	{
-		if(edge == false)
-			col = vec4(0.f, 0.f, 0.f, 1.f); //black - not edge
-		else
-			col = vec4(1.f, 1.f, 1.f, 1.f); //white - edge
-		return;
-	}
+		col = vec4(1.f * notEdge, 1.f * notEdge, 1.f * notEdge, 1.f); return;
 	}
 
 	//light calculation
-	vec3 lighting = vec3(0.f);
-	int iteration = edge ? ubo.sampleCount : 1;
-	for(int i = 0; i < iteration ; ++i){
-		vec4 samplePos = texelFetch(position, UV, i);
-		vec3 pos = samplePos.xyz;
-		vec3 normal = normalize(texelFetch(normal, UV, i).xyz);
-		lighting += CalculateLighting(pos, normal) * samplePos.a;
-	}
-	lighting /= float(iteration );
+	vec4 samplePos = texelFetch(position, UV, 0);
+	vec3 pos = samplePos.xyz;
+	vec3 normal = normalize(texelFetch(normal, UV, 0).xyz);
+	vec3 lighting = CalculateLighting(pos, normal) * samplePos.a;
 
-	float AO = 0.f;
-	for(int i = 0; i < ubo.sampleCount; ++i)
-		AO += texelFetch(ssaoBlur, UV, i).x;
-	AO /= float(ubo.sampleCount);
+//	float AO = texelFetch(ssaoBlur, UV, 0).x;
+//	lighting *= pow(AO, int(ubo.enableSSAO) * 2);
 
-	if(ubo.enableSSAO)
-		lighting *= pow(AO, 2);
+	if(notEdge == 0)
+		discard;
 
-	col = vec4(lighting, 1.f);
-
-//	if(length(texelFetch(normal, UV, 0)) == 0){
-//		col = vec4(1.f, 0, 0, 1.f);
-//	}
+	col = vec4(lighting, float(notEdge));
 }

@@ -39,7 +39,7 @@ public:
 		}
 		
 		//edge detection threshold
-		if (userInput.renderMode == 4) {
+		if (userInput.renderMode == 0 || userInput.renderMode == 4) {
 			ImGui::Text("Edge detection threshold");
 			ImGui::SliderFloat("Threshold", &userInput.threshold, 0.0f, 1.0f);
 		}
@@ -133,6 +133,7 @@ public:
 		vkDestroyPipeline(devices.device, ssaoBlurPipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, ssaoBlurPipelineLayout, nullptr);
 		vkDestroyPipeline(devices.device, skyboxPipeline, nullptr);
+		vkDestroyPipeline(devices.device, msaaPipeline, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
 		vkDestroyRenderPass(devices.device, offscreenRenderPass, nullptr);
 		offscreenFramebuffer.cleanup();
@@ -247,7 +248,7 @@ private:
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE;
+	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE, msaaPipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
@@ -704,43 +705,50 @@ private:
 		gen.resetAll();
 
 		/*
-		* full screen quad pipeline
+		* full screen quad pipeline for normal pixel & fill stencil buffer
 		*/
-		gen.setColorBlendInfo(VK_FALSE, 1);
+		gen.setColorBlendInfo(VK_TRUE, 1);
 		gen.setMultisampleInfo(VK_SAMPLE_COUNT_1_BIT);
-		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+		VkPipelineDepthStencilStateCreateInfo& depthStencilInfo = gen.getPipelineDepthStencilStateCreateInfo();
+		depthStencilInfo.stencilTestEnable = VK_TRUE;
+		depthStencilInfo.back.compareOp = VK_COMPARE_OP_ALWAYS;
+		depthStencilInfo.back.failOp = VK_STENCIL_OP_REPLACE;
+		depthStencilInfo.back.depthFailOp = VK_STENCIL_OP_REPLACE;
+		depthStencilInfo.back.passOp = VK_STENCIL_OP_REPLACE;
+		depthStencilInfo.back.compareMask = 0xFF;
+		depthStencilInfo.back.writeMask = 0xFF;
+		depthStencilInfo.back.reference = 1;
+		depthStencilInfo.front = depthStencilInfo.back;
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addShader(
 			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_normal_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
-		gen.resetAll();
+		gen.resetShaderVertexDescriptions();
 
 		/*
-		* pipeline for skybox
+		* use stencil buffer to only draw complex pixels
 		*/
-		//bindingDescription = skybox.getBindingDescription();
-		//attributeDescription = skybox.getAttributeDescriptions();
-
-		//gen.setMultisampleInfo(sampleCount, VK_TRUE, 0.2f);
-		//gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		//gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
-		//gen.addVertexInputBindingDescription({ bindingDescription });
-		//gen.addVertexInputAttributeDescription(attributeDescription);
-		//gen.addShader(
-		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
-		//	VK_SHADER_STAGE_VERTEX_BIT);
-		//gen.addShader(
-		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
-		//	VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		////generate skybox pipeline
-		//gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
+		depthStencilInfo = gen.getPipelineDepthStencilStateCreateInfo();
+		depthStencilInfo.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+		depthStencilInfo.back.failOp = VK_STENCIL_OP_KEEP;
+		depthStencilInfo.back.depthFailOp = VK_STENCIL_OP_KEEP;
+		depthStencilInfo.back.passOp = VK_STENCIL_OP_REPLACE;
+		depthStencilInfo.front = depthStencilInfo.back;
+		depthStencilInfo.depthTestEnable = VK_FALSE;
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_complex_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+		gen.generate(renderPass, &msaaPipeline, &pipelineLayout);
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -801,41 +809,41 @@ private:
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
+			///*
+			//* ssao occlusion render - full screem quad
+			//*/
+			//renderPassBeginInfo.renderPass = ssaoRenderPass;
+			//renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
+			//renderPassBeginInfo.clearValueCount = 1;
+			//renderPassBeginInfo.pClearValues = ssaoClearValues.data();
+			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			////dynamic states
+			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
+			//	&ssaoDescriptorSet, 0, nullptr);
+			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			//vkCmdEndRenderPass(commandBuffers[i]);
+
+			///*
+			//* ssao blur - full screen quad
+			//*/
+			//renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
+			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			////dynamic states
+			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
+			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
+			//	&ssaoBlurDescriptorSet, 0, nullptr);
+			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			//vkCmdEndRenderPass(commandBuffers[i]);
+
 			/*
-			* ssao occlusion render - full screem quad
-			*/
-			renderPassBeginInfo.renderPass = ssaoRenderPass;
-			renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
-			renderPassBeginInfo.clearValueCount = 1;
-			renderPassBeginInfo.pClearValues = ssaoClearValues.data();
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-			//dynamic states
-			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
-
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
-				&ssaoDescriptorSet, 0, nullptr);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			vkCmdEndRenderPass(commandBuffers[i]);
-
-			/*
-			* ssao blur - full screen quad
-			*/
-			renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-			//dynamic states
-			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
-
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
-				&ssaoBlurDescriptorSet, 0, nullptr);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			vkCmdEndRenderPass(commandBuffers[i]);
-
-			/*
-			* final - lighting calculation in full screen quad
+			* lighting calculation for normal pixels
 			*/
 			renderPassBeginInfo.renderPass = renderPass;
 			size_t framebufferIndex = i % framebuffers.size();
@@ -854,6 +862,15 @@ private:
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			
+			/*
+			* final - lighting calculation for complex pixels
+			*/
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, msaaPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+				&descriptorSets[descriptorSetIndex], 0, nullptr);
+
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
 			/*
 			* imgui
 			*/
@@ -1039,4 +1056,4 @@ private:
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project2");
+RUN_APPLICATION_MAIN(VulkanApp, 1200, 800, "project2");

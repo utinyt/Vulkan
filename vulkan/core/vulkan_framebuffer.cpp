@@ -70,7 +70,7 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 	attachment.description.stencilStoreOp	= VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	attachment.description.initialLayout	= VK_IMAGE_LAYOUT_UNDEFINED;
 	
-	if (imageAspect == VK_IMAGE_ASPECT_DEPTH_BIT || imageAspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
+	if (imageAspect & VK_IMAGE_ASPECT_DEPTH_BIT || imageAspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 	else {
