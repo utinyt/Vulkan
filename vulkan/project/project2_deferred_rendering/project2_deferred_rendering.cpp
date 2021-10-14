@@ -809,38 +809,38 @@ private:
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
-			///*
-			//* ssao occlusion render - full screem quad
-			//*/
-			//renderPassBeginInfo.renderPass = ssaoRenderPass;
-			//renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
-			//renderPassBeginInfo.clearValueCount = 1;
-			//renderPassBeginInfo.pClearValues = ssaoClearValues.data();
-			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			/*
+			* ssao occlusion render - full screem quad
+			*/
+			renderPassBeginInfo.renderPass = ssaoRenderPass;
+			renderPassBeginInfo.framebuffer = ssaoFramebuffer.framebuffer;
+			renderPassBeginInfo.clearValueCount = 1;
+			renderPassBeginInfo.pClearValues = ssaoClearValues.data();
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			////dynamic states
-			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+			//dynamic states
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
-			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
-			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
-			//	&ssaoDescriptorSet, 0, nullptr);
-			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			//vkCmdEndRenderPass(commandBuffers[i]);
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1,
+				&ssaoDescriptorSet, 0, nullptr);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
 
-			///*
-			//* ssao blur - full screen quad
-			//*/
-			//renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
-			//vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			/*
+			* ssao blur - full screen quad
+			*/
+			renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			////dynamic states
-			//vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+			//dynamic states
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
-			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
-			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
-			//	&ssaoBlurDescriptorSet, 0, nullptr);
-			//vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			//vkCmdEndRenderPass(commandBuffers[i]);
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipelineLayout, 0, 1,
+				&ssaoBlurDescriptorSet, 0, nullptr);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
 
 			/*
 			* lighting calculation for normal pixels

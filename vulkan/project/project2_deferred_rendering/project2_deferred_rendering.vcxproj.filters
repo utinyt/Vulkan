@@ -53,5 +53,8 @@
     <None Include="shaders\full_quad_complex.frag">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\full_quad_original.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -108,5 +108,5 @@ void main(){
 	if(ubo.enableSSAO)
 		lighting *= pow(AO, 2);
 
-	col = vec4(lighting, float(notEdge));
+	col = vec4(lighting, 1.f);
 }

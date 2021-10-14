@@ -6,7 +6,7 @@ layout(location = 0) out vec4 col;
 
 layout(binding = 0) uniform sampler2DMS position;
 layout(binding = 1) uniform sampler2DMS normal;
-//layout(binding = 2) uniform sampler2DMS ssaoBlur;
+layout(binding = 2) uniform sampler2DMS ssaoBlur;
 
 #define LIGHT_NUM 20
 
@@ -68,11 +68,11 @@ void main(){
 	}
 	lighting /= float(iteration);
 
-//	float AO = 0.f;
-//	for(int i = 0; i < iteration; ++i)
-//		AO += texelFetch(ssaoBlur, UV, i).x;
-//	AO /= float(iteration);
-//	lighting *= pow(AO, int(ubo.enableSSAO) * 2);
+	float AO = 0.f;
+	for(int i = 0; i < iteration; ++i)
+		AO += texelFetch(ssaoBlur, UV, i).x;
+	AO /= float(iteration);
+	lighting *= pow(AO, int(ubo.enableSSAO) * 2);
 
 	col = vec4(lighting, 1.f);
 }

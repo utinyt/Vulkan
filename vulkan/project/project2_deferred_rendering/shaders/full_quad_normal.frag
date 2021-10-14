@@ -6,7 +6,7 @@ layout(location = 0) out vec4 col;
 
 layout(binding = 0) uniform sampler2DMS position;
 layout(binding = 1) uniform sampler2DMS normal;
-//layout(binding = 2) uniform sampler2DMS ssaoBlur;
+layout(binding = 2) uniform sampler2DMS ssaoBlur;
 
 #define LIGHT_NUM 20
 
@@ -84,7 +84,7 @@ void main(){
 	case 2: //normal
 		col = vec4(texelFetch(normal, UV, 0).xyz, 1.f); return;
 	case 3: //ssao
-		//col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
+		col = vec4(texelFetch(ssaoBlur, UV, 0).xxx, 1.f); return;
 	case 4: //edge detection
 		col = vec4(1.f * notEdge, 1.f * notEdge, 1.f * notEdge, 1.f); return;
 	}
@@ -95,8 +95,8 @@ void main(){
 	vec3 normal = normalize(texelFetch(normal, UV, 0).xyz);
 	vec3 lighting = CalculateLighting(pos, normal) * samplePos.a;
 
-//	float AO = texelFetch(ssaoBlur, UV, 0).x;
-//	lighting *= pow(AO, int(ubo.enableSSAO) * 2);
+	float AO = texelFetch(ssaoBlur, UV, 0).x;
+	lighting *= pow(AO, int(ubo.enableSSAO) * 2);
 
 	if(notEdge == 0)
 		discard;
