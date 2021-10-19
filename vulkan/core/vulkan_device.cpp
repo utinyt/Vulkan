@@ -95,8 +95,11 @@ void VulkanDevice::createLogicalDevice() {
 	}
 
 	QueueFamilyIndices indices = findQueueFamilyIndices(physicalDevice, surface);
-	std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(),
-		indices.presentFamily.value() };
+	std::set<uint32_t> uniqueQueueFamilies = { 
+		indices.graphicsFamily.value(),
+		indices.presentFamily.value(),
+		indices.computeFamily.value()
+	};
 
 	std::vector<VkDeviceQueueCreateInfo> queueInfos;
 	float queuePriority = 1.f;
@@ -136,6 +139,7 @@ void VulkanDevice::createLogicalDevice() {
 	//get queue handles
 	vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+	vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &computeQueue);
 
 	LOG("created:\tlogical device");
 
@@ -216,10 +220,15 @@ VulkanDevice::QueueFamilyIndices VulkanDevice::findQueueFamilyIndices(VkPhysical
 			indices.graphicsFamily = i;
 		}
 
+		//compute family
+		if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) /*&& (i != indices.graphicsFamily)*/) {
+			indices.computeFamily = i;
+		}
+
 		//present family
 		VkBool32 presentSupport = false;
 		vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
-		if (presentSupport) {
+		if (presentSupport && !indices.presentFamily.has_value()) {
 			indices.presentFamily = i;
 		}
 

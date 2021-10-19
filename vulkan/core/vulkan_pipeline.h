@@ -24,6 +24,8 @@ public:
 	/** @brief add descriptor set layout */
 	void addDescriptorSetLayout(const std::vector<VkDescriptorSetLayout>& layouts);
 
+	/** @brief set input topology */
+	void setInputTopology(VkPrimitiveTopology topology);
 	/** @brief (re)set rasterizer info */
 	void setRasterizerInfo(
 		VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL,

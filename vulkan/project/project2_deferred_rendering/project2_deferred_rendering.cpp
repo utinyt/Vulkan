@@ -1056,4 +1056,4 @@ private:
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 1200, 800, "project2");
+RUN_APPLICATION_MAIN(VulkanApp, 1200, 800, "project2_deferred_rendering");

@@ -581,4 +581,4 @@ private:
 };
 
 //entry point
-RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project1");
+RUN_APPLICATION_MAIN(VulkanApp, 800, 600, "project1_skybox_msaa");

@@ -107,6 +107,15 @@ void PipelineGenerator::addDescriptorSetLayout(const std::vector<VkDescriptorSet
 }
 
 /*
+* set input topology in VkPipelineVertexInputStateCreateInfo
+* 
+* @param topology
+*/
+void PipelineGenerator::setInputTopology(VkPrimitiveTopology topology) {
+	inputAssemblyStateCreateInfo.topology = topology;
+}
+
+/*
 * (re)set rasterizer info 
 * 
 * @param polygonMode

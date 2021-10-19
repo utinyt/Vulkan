@@ -42,15 +42,20 @@ struct VulkanDevice {
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
+		std::optional<uint32_t> computeFamily;
 
 		bool isComplete() const {
-			return graphicsFamily.has_value() && presentFamily.has_value();
+			return graphicsFamily.has_value() && 
+				presentFamily.has_value() && 
+				computeFamily.has_value();
 		}
 	} indices;
 	/** handle to the graphics queue */
 	VkQueue graphicsQueue;
 	/** handle to the present queue (usually the same as graphics queue)*/
 	VkQueue presentQueue;
+	/** handle to the compute queue */
+	VkQueue computeQueue;
 	/** memory properties of the current physical device */
 	VkPhysicalDeviceMemoryProperties memProperties;
 	/** current physical device properties */
