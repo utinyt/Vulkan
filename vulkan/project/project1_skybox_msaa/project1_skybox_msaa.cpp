@@ -505,19 +505,11 @@ private:
 	* @param currentFrame - index of uniform buffer vector
 	*/
 	void updateUniformBuffer(size_t currentFrame) {
-		static auto startTime = std::chrono::high_resolution_clock::now();
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-		dt = time - oldTime;
-		oldTime = time;
-
 		CameraMatrices ubo{};
 		ubo.model = glm::translate(glm::mat4(1.f), glm::vec3(0.f, -.5f, 0.f));
-		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
+		ubo.view = cameraMatrices.view;
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
-		ubo.proj = glm::perspective(glm::radians(45.f),
-			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 10.f);
-		ubo.proj[1][1] *= -1;
+		ubo.proj = cameraMatrices.proj;
 
 		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
 	}

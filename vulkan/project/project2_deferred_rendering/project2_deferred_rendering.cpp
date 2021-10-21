@@ -1,5 +1,4 @@
 #include <array>
-#include <chrono>
 #include <random>
 #include <include/imgui/imgui.h>
 #include "core/vulkan_app_base.h"
@@ -928,20 +927,12 @@ private:
 	* @param currentFrame - index of uniform buffer vector
 	*/
 	void updateUniformBuffer(size_t currentFrame) {
-		static auto startTime = std::chrono::high_resolution_clock::now();
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-		dt = time - oldTime;
-		oldTime = time;
-
 		/*
 		* update camera
 		*/
-		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
+		ubo.view = cameraMatrices.view;
 		ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view /** ubo.model*/));
-		ubo.proj = glm::perspective(glm::radians(45.f),
-			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
-		ubo.proj[1][1] *= -1;
+		ubo.proj = cameraMatrices.proj;
 
 		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
 
@@ -957,7 +948,7 @@ private:
 		float angleInc = 2 * PI / LIGHT_NUM;
 		for (int i = 0; i < LIGHT_NUM; ++i) {
 			uboDeferredRendering.lights[i].pos =
-				glm::vec4(12 * std::cos(time / 3 + i * angleInc), 3.f, 12 * std::sin(time / 3 + i * angleInc), 1.f);
+				glm::vec4(12 * std::cos(oldTime / 3 + i * angleInc), 3.f, 12 * std::sin(oldTime / 3 + i * angleInc), 1.f);
 			uboDeferredRendering.lights[i].pos = ubo.view * uboDeferredRendering.lights[i].pos; // light position in view space
 		}
 		deferredUBOMemories[currentFrame].mapData(devices.device, &uboDeferredRendering);

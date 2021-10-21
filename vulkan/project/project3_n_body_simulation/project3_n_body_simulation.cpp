@@ -10,13 +10,11 @@
 #include "core/vulkan_imgui.h"
 #include "core/vulkan_texture.h"
 #include "core/vulkan_pipeline.h"
-#include "core/vulkan_framebuffer.h"
 
 namespace {
 	std::random_device device;
 	std::mt19937_64 RNGen(device());
 	std::uniform_real_distribution<> rdFloat(0.0, 1.0);
-	const int INSTANCE_NUM_SQRT = 32;
 }
 
 class Imgui : public ImguiBase {
@@ -42,6 +40,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
+		MAX_FRAMES_IN_FLIGHT = 2;
 	}
 
 	/*
@@ -58,6 +57,8 @@ public:
 		//descriptor releated resources
 		vkDestroyDescriptorPool(devices.device, descriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, computeDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, computeDescriptorSetLayout, nullptr);
 
 		//uniform buffers
 		for (size_t i = 0; i < cameraUBO.size(); ++i) {
@@ -65,10 +66,14 @@ public:
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 			vkDestroyBuffer(devices.device, cameraUBO[i], nullptr);
 		}
+		devices.memoryAllocator.freeBufferMemory(computeUBO,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		vkDestroyBuffer(devices.device, computeUBO, nullptr);
 
 		//model & floor buffer & skybox buffers
-		devices.memoryAllocator.freeBufferMemory(vertexBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, vertexBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(particleBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, particleBuffer, nullptr);
+		particleTex.cleanup();
 
 		//framebuffers
 		for (auto& framebuffer : framebuffers) {
@@ -79,7 +84,15 @@ public:
 		vkDestroyPipeline(devices.device, pipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
+		vkDestroyPipeline(devices.device, computePipelineCompute, nullptr);
+		vkDestroyPipeline(devices.device, computePipelineUpdate, nullptr);
+		vkDestroyPipelineLayout(devices.device, computePipelineLayout, nullptr);
 
+		//semaphore
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vkDestroySemaphore(devices.device, particleComputeCompleteSemaphores[i], nullptr);
+			vkDestroySemaphore(devices.device, renderCompleteComputeSemaphores[i], nullptr);
+		}
 	}
 
 	/*
@@ -89,14 +102,15 @@ public:
 		VulkanAppBase::initApp();
 
 		//init cap setting
-		camera.camPos = glm::vec3(0.f, 0.f, 2.f);
+		camera.camPos = glm::vec3(10.f, 10.f, 10.f);
 		camera.camFront = -camera.camPos;
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
 		//create particle vertex buffer
 		createParticles();
+		//load particle texture
+		particleTex.load(&devices, "../../textures/particle.png");
 
-		//render pass
 		renderPass = vktools::createRenderPass(devices.device,
 			{swapchain.surfaceFormat.format},
 			depthFormat,
@@ -107,28 +121,24 @@ public:
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-		//descriptor sets
+		
 		createDescriptorSet();
-		//pipeline
 		createPipeline();
-		//framebuffer
 		createFramebuffers();
-		//uniform buffers
 		createUniformBuffers();
-		//update descriptor set
 		updateDescriptorSets();
-		//imgui
 		imguiBase->init(&devices, swapchain.extent.width, swapchain.extent.height,
 			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
-		//record command buffer
 		recordCommandBuffer();
+		createComputeSemaphore();
+		recordComputeCommandBuffer();
 	}
 
 private:
-	/** uniform buffer object */
-	struct CameraMatrices {
-		glm::mat4 view;
-		glm::mat4 proj;
+	/** compute shader ubo */
+	struct ComputeUBO {
+		float dt;
+		int particleNum;
 	} ubo;
 
 	/** random float generator */
@@ -152,24 +162,51 @@ private:
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
 	/** clear color */
-	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
-
+	VkClearColorValue clearColor{0.1f, 0.1f, 0.1f, 1.f};
 	/** uniform buffer handle */
 	std::vector<VkBuffer> cameraUBO;
 	/**  uniform buffer memory handle */
 	std::vector<MemoryAllocator::HostVisibleMemory> cameraUBOMemories;
-	
+	/** semaphore for synchronizing compute & graphics pipeline */
+	std::vector<VkSemaphore> renderCompleteComputeSemaphores;
+
 	/** particle info */
 	struct Particle {
 		glm::vec4 posm; //xyz = position, w = mass
 		glm::vec4 vel;
 	};
+	/** number of particle */
 	uint32_t particleNum = 0;
+	/** particle texture */
+	Texture2D particleTex;
 
 	/*
 	* compute resources
 	*/
-	VkBuffer vertexBuffer = VK_NULL_HANDLE;
+	/** partice buffer */
+	VkBuffer particleBuffer = VK_NULL_HANDLE;
+	/** particle buffer size */
+	VkDeviceSize particleBufferSize;
+	/** uniform buffer handle */
+	VkBuffer computeUBO;
+	/**  uniform buffer memory handle */
+	MemoryAllocator::HostVisibleMemory computeUBOMemories;
+	/** descriptor set bindings */
+	DescriptorSetBindings computeBindings;
+	/** descriptor layout */
+	VkDescriptorSetLayout computeDescriptorSetLayout;
+	/** descriptor pool */
+	VkDescriptorPool computeDescriptorPool;
+	/** descriptor sets */
+	VkDescriptorSet computeDescriptorSets;
+	/** graphics pipeline */
+	VkPipeline computePipelineCompute = VK_NULL_HANDLE, computePipelineUpdate = VK_NULL_HANDLE;
+	/** pipeline layout */
+	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
+	/** semaphore for synchronizing compute & graphics pipeline */
+	std::vector<VkSemaphore> particleComputeCompleteSemaphores;
+	/** compute command buffers */
+	std::vector<VkCommandBuffer> computeCommandBuffers;
 
 	/*
 	* called every frame - submit queues
@@ -178,22 +215,48 @@ private:
 		uint32_t imageIndex = prepareFrame();
 
 		/*
-		* offscreen rendering
+		* graphics command
 		*/
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-		VkSubmitInfo submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = &presentCompleteSemaphores[currentFrame];
+		VkPipelineStageFlags waitStages[] = { 
+			VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT 
+		};
+		VkSemaphore graphicsWaitSemaphores[] = { 
+			particleComputeCompleteSemaphores[currentFrame],
+			presentCompleteSemaphores[currentFrame]
+		};
+		VkSemaphore graphicsSignalSemaphores[] = { 
+			renderCompleteComputeSemaphores[currentFrame],
+			renderCompleteSemaphores[currentFrame] 
+		};
+
+		VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		submitInfo.waitSemaphoreCount = 2;
+		submitInfo.pWaitSemaphores = graphicsWaitSemaphores;
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = 1;
 		size_t commandBufferIndex = currentFrame * framebuffers.size() + imageIndex;
 		submitInfo.pCommandBuffers = &commandBuffers[commandBufferIndex];
-		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &renderCompleteSemaphores[currentFrame];
+		submitInfo.signalSemaphoreCount = 2;
+		submitInfo.pSignalSemaphores = graphicsSignalSemaphores;
 		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, frameLimitFences[currentFrame]));
 
 		submitFrame(imageIndex);
+
+		/*
+		* compute command
+		*/
+		VkPipelineStageFlags waitStageCompute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+		VkSubmitInfo computeSubmitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		computeSubmitInfo.waitSemaphoreCount = 1;
+		computeSubmitInfo.pWaitSemaphores = &renderCompleteComputeSemaphores[currentFrame];
+		computeSubmitInfo.pWaitDstStageMask = &waitStageCompute;
+		computeSubmitInfo.commandBufferCount = 1;
+		computeSubmitInfo.pCommandBuffers = &computeCommandBuffers[currentFrame];
+		computeSubmitInfo.signalSemaphoreCount = 1;
+		computeSubmitInfo.pSignalSemaphores = &particleComputeCompleteSemaphores[currentFrame];
+		VK_CHECK_RESULT(vkQueueSubmit(devices.computeQueue, 1, &computeSubmitInfo, VK_NULL_HANDLE));
 	}
 
 	/*
@@ -231,6 +294,7 @@ private:
 
 		const uint32_t particlePerAttractor = 4096;
 		particleNum = static_cast<uint32_t>(attractors.size()) * particlePerAttractor;
+		ubo.particleNum = particleNum;
 		std::vector<Particle> particles(particleNum);
 
 		for (size_t i = 0; i < attractors.size(); ++i) {
@@ -252,15 +316,15 @@ private:
 		}
 
 		/* create vertex buffer */
-		VkDeviceSize particleBufferSize = particles.size() * sizeof(Particle);
+		particleBufferSize = particles.size() * sizeof(Particle);
 
 		VkBuffer stagingBuffer;
 		MemoryAllocator::HostVisibleMemory hostVisibleMemory = 
 			devices.createBuffer(stagingBuffer, particleBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		hostVisibleMemory.mapData(devices.device, particles.data());
-		
-		devices.createBuffer(vertexBuffer, particleBufferSize,
+	
+		devices.createBuffer(particleBuffer, particleBufferSize,
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | 
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -268,12 +332,34 @@ private:
 		VkCommandBuffer oneTimeCmdBuf = devices.beginCommandBuffer();
 		VkBufferCopy copy{};
 		copy.size = particleBufferSize;
-		vkCmdCopyBuffer(oneTimeCmdBuf, stagingBuffer, vertexBuffer, 1, &copy);
+		vkCmdCopyBuffer(oneTimeCmdBuf, stagingBuffer, particleBuffer, 1, &copy);
 		devices.endCommandBuffer(oneTimeCmdBuf);
 
 		devices.memoryAllocator.freeBufferMemory(stagingBuffer,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vkDestroyBuffer(devices.device, stagingBuffer, nullptr);
+	}
+
+	/*
+	* create semaphore to sync compute & graphics pipeline
+	*/
+	void createComputeSemaphore() {
+		//create semaphore
+		particleComputeCompleteSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		renderCompleteComputeSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		VkSemaphoreCreateInfo semaphoreCreateInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			VK_CHECK_RESULT(vkCreateSemaphore(devices.device, &semaphoreCreateInfo, nullptr, &particleComputeCompleteSemaphores[i]));
+			VK_CHECK_RESULT(vkCreateSemaphore(devices.device, &semaphoreCreateInfo, nullptr, &renderCompleteComputeSemaphores[i]));
+		}
+
+		//signal semaphore since graphics pipeline is used before compute pipeline
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.pSignalSemaphores = particleComputeCompleteSemaphores.data();
+		submitInfo.signalSemaphoreCount = static_cast<uint32_t>(particleComputeCompleteSemaphores.size());
+		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
+		VK_CHECK_RESULT(vkQueueWaitIdle(devices.graphicsQueue));
 	}
 
 	/*
@@ -287,6 +373,9 @@ private:
 			pipelineLayout = VK_NULL_HANDLE;
 		}
 
+		/*
+		* graphics pipeline
+		*/
 		PipelineGenerator gen(devices.device);
 		gen.addVertexInputBindingDescription({ {0, sizeof(Particle), VK_VERTEX_INPUT_RATE_VERTEX} });
 		gen.addVertexInputAttributeDescription({ 
@@ -308,7 +397,59 @@ private:
 		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
 
-		LOG("created:\tgraphics pipelines");
+		/*
+		* compute pipeline
+		*/
+		//compute pipeline layout
+		VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo = 
+			vktools::initializers::pipelineLayoutCreateInfo(&computeDescriptorSetLayout, 1);
+		VK_CHECK_RESULT(vkCreatePipelineLayout(devices.device, &computePipelineLayoutCreateInfo, nullptr, &computePipelineLayout));
+
+		//compute pipeline
+		VkComputePipelineCreateInfo computePipelineCreateInfo{};
+		computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		computePipelineCreateInfo.layout = computePipelineLayout;
+		VkShaderModule csCompute = vktools::createShaderModule(devices.device, vktools::readFile("shaders/particle_compute_comp.spv"));
+		computePipelineCreateInfo.stage = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_COMPUTE_BIT, csCompute);
+
+		//specialization data for the compute shader
+		struct SpecializationData {
+			uint32_t sharedDataSize;
+			float gravity;
+			float power;
+			float soften;
+		} specializationData;
+
+		specializationData.sharedDataSize = std::min((uint32_t)1024, (uint32_t)(devices.properties.limits.maxComputeSharedMemorySize / sizeof(glm::vec4)));
+		specializationData.gravity = 0.002f;
+		specializationData.power = 0.75f;
+		specializationData.soften = 0.05f;
+
+		std::vector<VkSpecializationMapEntry> entry = {
+			{0, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t)},
+			{1, offsetof(SpecializationData, gravity), sizeof(float)},
+			{2, offsetof(SpecializationData, power), sizeof(float)},
+			{3, offsetof(SpecializationData, soften), sizeof(float)}
+		};
+
+		VkSpecializationInfo specializationInfo{};
+		specializationInfo.mapEntryCount = static_cast<uint32_t>(entry.size());
+		specializationInfo.pMapEntries = entry.data();
+		specializationInfo.dataSize = sizeof(SpecializationData);
+		specializationInfo.pData = &specializationData;
+
+		computePipelineCreateInfo.stage.pSpecializationInfo = &specializationInfo;
+		//create compute pipeline - 1st pass
+		VK_CHECK_RESULT(vkCreateComputePipelines(devices.device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipelineCompute));
+
+		//create compute pipeline - 2nd pass
+		VkShaderModule csUpdate = vktools::createShaderModule(devices.device, vktools::readFile("shaders/particle_update_comp.spv"));
+		computePipelineCreateInfo.stage = vktools::initializers::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_COMPUTE_BIT, csUpdate);
+		VK_CHECK_RESULT(vkCreateComputePipelines(devices.device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipelineUpdate));
+
+		vkDestroyShaderModule(devices.device, csCompute, nullptr);
+		vkDestroyShaderModule(devices.device, csUpdate, nullptr);
+		LOG("created:\tpipelines");
 	}
 
 	/*
@@ -343,8 +484,7 @@ private:
 	* record drawing commands to command buffers
 	*/
 	virtual void recordCommandBuffer() override {
-		VkCommandBufferBeginInfo cmdBufBeginInfo{};
-		cmdBufBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		VkCommandBufferBeginInfo cmdBufBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 
 		std::vector<VkClearValue> clearValues{};
 		clearValues.resize(2);
@@ -376,7 +516,7 @@ private:
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
 			VkDeviceSize offsets = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &vertexBuffer, &offsets);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &particleBuffer, &offsets);
 
 			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
 
@@ -391,23 +531,82 @@ private:
 		LOG("built:\t\tcommand buffers");
 	}
 
+	/*
+	* record compute command buffer
+	*/
+	void recordComputeCommandBuffer() {
+		//create command buffers
+		computeCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+		VkCommandBufferAllocateInfo compCmdBufInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+		compCmdBufInfo.commandPool = devices.commandPool;
+		compCmdBufInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		compCmdBufInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
+		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &compCmdBufInfo, computeCommandBuffers.data()));
+
+		//record command buffers
+		VkCommandBufferBeginInfo cmdBufBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			VK_CHECK_RESULT(vkBeginCommandBuffer(computeCommandBuffers[i], &cmdBufBeginInfo));
+			//acquire barrrier...
+
+			//first pass - compute particle gravity
+			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineCompute);
+			vkCmdBindDescriptorSets(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout,
+				0, 1, &computeDescriptorSets, 0, 0);
+			uint32_t localGroupSize = 256;
+			vkCmdDispatch(computeCommandBuffers[i], particleNum / localGroupSize, 1, 1); //local_group_x = 256
+
+			//memory barrier
+			VkBufferMemoryBarrier bufferBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+			bufferBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+			bufferBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferBarrier.buffer = particleBuffer;
+			bufferBarrier.size = particleBufferSize;
+
+			vkCmdPipelineBarrier(computeCommandBuffers[i],
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				0,
+				0, nullptr,
+				1, &bufferBarrier,
+				0, nullptr);
+
+			//second pass - update particle position
+			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineUpdate);
+			vkCmdDispatch(computeCommandBuffers[i], particleNum / localGroupSize, 1, 1);
+
+			//release barrrier ...
+			vkEndCommandBuffer(computeCommandBuffers[i]);
+		}
+	}
 
 	/*
 	* create MAX_FRAMES_IN_FLIGHT of ubos
 	*/
 	void createUniformBuffers() {
+		//camera ubo
 		VkDeviceSize cameraUBOSize = sizeof(CameraMatrices);
 		cameraUBO.resize(MAX_FRAMES_IN_FLIGHT);
 		cameraUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
 
-		VkBufferCreateInfo cameraUBOCreateInfo = vktools::initializers::bufferCreateInfo(
-			cameraUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo cameraUBOCreateInfo = 
+			vktools::initializers::bufferCreateInfo(cameraUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &cameraUBOCreateInfo, nullptr, &cameraUBO[i]));
 			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
 					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		}
+
+		//compute shader ubo
+		VkDeviceSize computeUBOSize = sizeof(ComputeUBO);
+		VkBufferCreateInfo computeUBOCreateInfo = 
+			vktools::initializers::bufferCreateInfo(computeUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &computeUBOCreateInfo, nullptr, &computeUBO));
+		computeUBOMemories = devices.memoryAllocator.allocateBufferMemory(computeUBO,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	}
 
 	/*
@@ -416,43 +615,53 @@ private:
 	* @param currentFrame - index of uniform buffer vector
 	*/
 	void updateUniformBuffer(size_t currentFrame) {
-		static auto startTime = std::chrono::high_resolution_clock::now();
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-		dt = time - oldTime;
-		oldTime = time;
-
-		/*
-		* update camera
-		*/
-		ubo.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
-		ubo.proj = glm::perspective(glm::radians(45.f),
-			swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
-		ubo.proj[1][1] *= -1;
-
-		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
+		//graphics
+		cameraUBOMemories[currentFrame].mapData(devices.device, &cameraMatrices);
+		//compute
+		ubo.dt = dt;
+		computeUBOMemories.mapData(devices.device, &ubo);
 	}
 
 	/*
 	* set descriptor bindings & allocate destcriptor sets
 	*/
 	void createDescriptorSet() {
+		//graphics
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
+
+		//compute
+		computeBindings.addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+		computeBindings.addBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+		computeDescriptorPool = computeBindings.createDescriptorPool(devices.device, 1);
+		computeDescriptorSetLayout = computeBindings.createDescriptorSetLayout(devices.device);
+		computeDescriptorSets = vktools::allocateDescriptorSets(devices.device, computeDescriptorSetLayout, computeDescriptorPool, 1).front();
 	}
 
 	/*
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
+		//graphics
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
+
 			std::vector<VkWriteDescriptorSet> writes;
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &cameraUBObufferInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &particleTex.descriptor));
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
+
+		//compute
+		VkDescriptorBufferInfo vertexBufferInfo{ particleBuffer, 0, particleBufferSize };
+		VkDescriptorBufferInfo computeUBOInfo{ computeUBO, 0, sizeof(ComputeUBO)};
+		std::vector<VkWriteDescriptorSet> writes;
+		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 0, &vertexBufferInfo));
+		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 1, &computeUBOInfo));
+		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
 };
 

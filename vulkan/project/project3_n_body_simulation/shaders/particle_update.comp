@@ -1,0 +1,25 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct Particle{
+	vec4 posm;
+	vec4 vel;
+};
+
+layout(std140, binding = 0) buffer Pos{
+	Particle particles[];
+};
+
+layout(binding = 1) uniform UBO {
+	float dt;
+	int particleNum;
+} ubo;
+
+void main(){
+	int index = int(gl_GlobalInvocationID);
+	vec4 position = particles[index].posm;
+	vec4 velocity = particles[index].vel;
+	position += ubo.dt * velocity;
+	particles[index].posm.xyz = position.xyz;
+}

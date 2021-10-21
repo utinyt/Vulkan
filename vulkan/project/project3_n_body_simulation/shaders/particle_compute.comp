@@ -1,0 +1,26 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct Particle{
+	vec4 posm;
+	vec4 vel;
+};
+
+layout(std140, binding = 0) buffer Pos{
+	Particle particles[];
+};
+
+layout(binding = 1) uniform UBO {
+	float dt;
+	int particleNum;
+} ubo;
+
+layout(constant_id = 0) const int SHARED_DATA_SIZE = 512;
+layout(constant_id = 1) const float GRAVITY = 0.002;
+layout(constant_id = 2) const float POWER = 0.75;
+layout(constant_id = 3) const float SOFTEN = 0.0075;
+
+void main(){
+	
+}

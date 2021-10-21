@@ -1,7 +1,9 @@
 #include <fstream>
-#include <imgui/imgui.h>
 #include <algorithm>
+#include <chrono>
+#include <imgui/imgui.h>
 #include <glm/glm.hpp>
+#include "glm/gtc/matrix_transform.hpp"
 #include "vulkan_app_base.h"
 #include "vulkan_debug.h"
 
@@ -176,6 +178,11 @@ void VulkanAppBase::updateCamera() {
 	dir.y = std::sin(glm::radians(pitch));
 	dir.z = std::sin(glm::radians(yaw)) * std::cos(glm::radians(pitch));
 	camera.camFront = glm::normalize(dir);
+
+	cameraMatrices.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
+	cameraMatrices.proj = glm::perspective(glm::radians(45.f),
+		swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
+	cameraMatrices.proj[1][1] *= -1;
 }
 
 /*
@@ -193,6 +200,13 @@ void VulkanAppBase::initApp() {
 * called every frame - update application
 */
 void VulkanAppBase::update() {
+	//update dt
+	static auto startTime = std::chrono::high_resolution_clock::now();
+	auto currentTime = std::chrono::high_resolution_clock::now();
+	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+	dt = time - oldTime;
+	oldTime = time;
+
 	//mouse info update
 	glfwGetCursorPos(window, &xpos, &ypos);
 	leftPressed		= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);

@@ -85,6 +85,8 @@
   <ItemGroup>
     <None Include="shaders\particle.frag" />
     <None Include="shaders\particle.vert" />
+    <None Include="shaders\particle_compute.comp" />
+    <None Include="shaders\particle_update.comp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

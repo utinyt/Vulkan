@@ -29,5 +29,11 @@
     <None Include="shaders\particle.frag">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\particle_compute.comp">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\particle_update.comp">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

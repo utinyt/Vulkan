@@ -89,18 +89,26 @@ protected:
 	VkImageView multisampleColorImageView = VK_NULL_HANDLE;
 	/** image sample count */
 	VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+	/** frame time & elapsed time*/
+	float dt = 0, oldTime = 0;
 
+	/** camera structs */
 	struct Camera {
 		glm::vec3 camPos = glm::vec3(0, 1, 3);
 		glm::vec3 camFront = glm::vec3(0, 0, -1);
 		glm::vec3 camUp = glm::vec3(0, 1, 0);
 	} camera;
-
-	float dt = 0, oldTime = 0;
+	struct CameraMatrices {
+		glm::mat4 view;
+		glm::mat4 proj;
+	} cameraMatrices;
 
 private:
+	/** glfw mouse position */
 	double oldXPos = 0, oldYPos = 0;
+	/** glfw mouse rotation */
 	float yaw = -90.f, pitch = 0;
+	/** glfw capture mouse */
 	bool captureMouse = false;
 
 	void initWindow();
