@@ -82,6 +82,7 @@ void VulkanAppBase::run() {
 		glfwPollEvents();
 		update();
 		draw();
+		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 	vkDeviceWaitIdle(devices.device);
 }
@@ -284,7 +285,6 @@ void VulkanAppBase::submitFrame(uint32_t imageIndex) {
 	else {
 		VK_CHECK_RESULT(result);
 	}
-	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 /*

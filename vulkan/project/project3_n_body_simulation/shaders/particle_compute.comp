@@ -21,6 +21,40 @@ layout(constant_id = 1) const float GRAVITY = 0.002;
 layout(constant_id = 2) const float POWER = 0.75;
 layout(constant_id = 3) const float SOFTEN = 0.0075;
 
+//cache particle position data to shared variables for faster access
+shared vec4 sharedData[SHARED_DATA_SIZE];
+
 void main(){
-	
+	uint index = gl_GlobalInvocationID.x;
+	if(index >= ubo.particleNum){
+		return;
+	}
+
+	vec4 posm = particles[index].posm;
+	vec4 vel = particles[index].vel;
+	vec4 acceleration = vec4(0.f);
+
+	for(int i = 0; i < ubo.particleNum; i += SHARED_DATA_SIZE){
+		uint particleIndex = i + uint(gl_LocalInvocationID.x);
+		if(particleIndex < ubo.particleNum){
+			sharedData[gl_LocalInvocationID.x] = particles[particleIndex].posm;
+		}
+		else{
+			sharedData[gl_LocalInvocationID.x] = vec4(0.f);
+		}
+
+		memoryBarrierShared();
+		barrier();
+
+		for(int j = 0; j < gl_WorkGroupSize.x; j++){
+			vec4 otherPos = sharedData[j];
+			vec3 len = otherPos.xyz - posm.xyz;
+			acceleration.xyz += GRAVITY * len * otherPos.w / pow(dot(len, len) + SOFTEN, POWER);
+		}
+
+		memoryBarrierShared();
+		barrier();
+	}
+
+	particles[index].vel.xyz += ubo.dt * acceleration.xyz;
 }

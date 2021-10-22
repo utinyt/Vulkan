@@ -102,7 +102,7 @@ public:
 		VulkanAppBase::initApp();
 
 		//init cap setting
-		camera.camPos = glm::vec3(10.f, 10.f, 10.f);
+		camera.camPos = glm::vec3(20.f, 20.f, 20.f);
 		camera.camFront = -camera.camPos;
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
@@ -280,6 +280,19 @@ private:
 	}
 
 	/*
+	* return a random point on s surface of sphere - naive
+	*/
+	glm::vec3 getRandomPointOnSphere(const glm::vec3& center, float radius) {
+		float PI = 3.141592f;
+		float theta = 2 * PI * rdFloat(RNGen);
+		float phi = PI * rdFloat(RNGen);
+		float x = std::sin(phi) * std::cos(theta);
+		float y = std::sin(phi) * std::sin(theta);
+		float z = std::cos(phi);
+		return radius * glm::vec3( x, y, z ) + center;
+	}
+
+	/*
 	* create particle info
 	*/
 	void createParticles() {
@@ -421,7 +434,7 @@ private:
 		} specializationData;
 
 		specializationData.sharedDataSize = std::min((uint32_t)1024, (uint32_t)(devices.properties.limits.maxComputeSharedMemorySize / sizeof(glm::vec4)));
-		specializationData.gravity = 0.002f;
+		specializationData.gravity = 0.0002f;
 		specializationData.power = 0.75f;
 		specializationData.soften = 0.05f;
 
