@@ -253,7 +253,7 @@ void PipelineGenerator::generate(VkRenderPass renderPass,
 	pipelineInfo.subpass = 0;
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, {}, 1, &pipelineInfo, nullptr, outPipeline));
 
-	resetShaderVertexDescriptions();
+	//resetShaderVertexDescriptions();
 }
 
 /*

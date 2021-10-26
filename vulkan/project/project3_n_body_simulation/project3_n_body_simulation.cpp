@@ -24,12 +24,15 @@ public:
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
+		ImGui::Checkbox("Bloom", &userInput.enableBloom);
+
 		ImGui::End();
 		ImGui::Render();
 	}
 
 	/* user input collection */
 	struct UserInput {
+		bool enableBloom = true;
 	} userInput;
 };
 
@@ -41,7 +44,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
-		MAX_FRAMES_IN_FLIGHT = 2;
+		MAX_FRAMES_IN_FLIGHT = 1;
 	}
 
 	/*
@@ -62,6 +65,10 @@ public:
 		vkDestroyDescriptorSetLayout(devices.device, computeDescriptorSetLayout, nullptr);
 		vkDestroyDescriptorPool(devices.device, hdrDescriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(devices.device, hdrDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, brightDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, brightDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, bloomDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, bloomDescriptorSetLayout, nullptr);
 
 		//uniform buffers
 		for (size_t i = 0; i < cameraUBO.size(); ++i) {
@@ -72,6 +79,10 @@ public:
 		devices.memoryAllocator.freeBufferMemory(computeUBO,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vkDestroyBuffer(devices.device, computeUBO, nullptr);
+
+		devices.memoryAllocator.freeBufferMemory(bloomUBO,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		vkDestroyBuffer(devices.device, bloomUBO, nullptr);
 
 		//model & floor buffer & skybox buffers
 		devices.memoryAllocator.freeBufferMemory(particleBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -93,17 +104,25 @@ public:
 		vkDestroyPipeline(devices.device, hdrPipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, hdrPipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, hdrRenderPass, nullptr);
-		vkDestroyPipeline(devices.device, bloomPipeline, nullptr);
+		vkDestroyPipeline(devices.device, brightPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, brightPipelineLayout, nullptr);
+		vkDestroyRenderPass(devices.device, brightRenderPass, nullptr);
+		vkDestroyPipeline(devices.device, bloomPipelineVert, nullptr);
+		vkDestroyPipeline(devices.device, bloomPipelineHorz, nullptr);
 		vkDestroyPipelineLayout(devices.device, bloomPipelineLayout, nullptr);
-		vkDestroyRenderPass(devices.device, bloomRenderPass, nullptr);
 		vkDestroySampler(devices.device, offscreenSampler, nullptr);
 
 		hdrFramebuffer.cleanup();
+		brightFramebuffer.cleanup();
+		bloomFramebufferVert.cleanup();
+		bloomFramebufferHorz.cleanup();
 
 		//semaphore
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			vkDestroySemaphore(devices.device, particleComputeCompleteSemaphores[i], nullptr);
-			vkDestroySemaphore(devices.device, renderCompleteComputeSemaphores[i], nullptr);
+		for (auto& semaphore : particleComputeCompleteSemaphores) {
+			vkDestroySemaphore(devices.device, semaphore, nullptr);
+		}
+		for (auto& semaphore : renderCompleteComputeSemaphores) {
+			vkDestroySemaphore(devices.device, semaphore, nullptr);
 		}
 	}
 
@@ -226,23 +245,39 @@ private:
 	*/
 	/** offscreen (hdr) framebuffer */
 	//TODO: prepare MAX_FRAMES_IN_FLIGHT sets of framebuffers
-	Framebuffer hdrFramebuffer, bloomFramebuffer;
+	Framebuffer hdrFramebuffer, brightFramebuffer, bloomFramebufferVert, bloomFramebufferHorz;
 	/** render passes */
-	VkRenderPass hdrRenderPass = VK_NULL_HANDLE, bloomRenderPass = VK_NULL_HANDLE;
+	VkRenderPass hdrRenderPass = VK_NULL_HANDLE,
+		brightRenderPass = VK_NULL_HANDLE;
 	/** sampler */
 	VkSampler offscreenSampler = VK_NULL_HANDLE;
 	/** pipelines */
-	VkPipeline hdrPipeline = VK_NULL_HANDLE, bloomPipeline = VK_NULL_HANDLE;
+	VkPipeline hdrPipeline = VK_NULL_HANDLE,
+		brightPipeline = VK_NULL_HANDLE,
+		bloomPipelineVert = VK_NULL_HANDLE,
+		bloomPipelineHorz = VK_NULL_HANDLE;
 	/** pipelines */
-	VkPipelineLayout hdrPipelineLayout = VK_NULL_HANDLE, bloomPipelineLayout = VK_NULL_HANDLE;
+	VkPipelineLayout hdrPipelineLayout = VK_NULL_HANDLE,
+		brightPipelineLayout = VK_NULL_HANDLE,
+		bloomPipelineLayout = VK_NULL_HANDLE;
 	/** descriptor set bindings */
-	DescriptorSetBindings hdrBindings, bloomBindings;
+	DescriptorSetBindings hdrBindings, brightBindings, bloomBindings;
 	/** descriptor pools */
-	VkDescriptorPool hdrDescriptorPool = VK_NULL_HANDLE, bloomDescriptorPool = VK_NULL_HANDLE;
+	VkDescriptorPool hdrDescriptorPool = VK_NULL_HANDLE,
+		brightDescriptorPool = VK_NULL_HANDLE,
+		bloomDescriptorPool = VK_NULL_HANDLE;
 	/** descriptor set layouts */
-	VkDescriptorSetLayout hdrDescriptorSetLayout = VK_NULL_HANDLE, bloomDescriptorSetLayout = VK_NULL_HANDLE;
+	VkDescriptorSetLayout hdrDescriptorSetLayout = VK_NULL_HANDLE,
+		brightDescriptorSetLayout = VK_NULL_HANDLE,
+		bloomDescriptorSetLayout = VK_NULL_HANDLE;
 	/** descriptor sets */
-	VkDescriptorSet hdrDescriptorSet = VK_NULL_HANDLE, bloomDescriptorSet = VK_NULL_HANDLE;
+	VkDescriptorSet hdrDescriptorSet = VK_NULL_HANDLE,
+		brightDescriptorSet = VK_NULL_HANDLE,
+		bloomDescriptorSetVert = VK_NULL_HANDLE,
+		bloomDescriptorSetHorz = VK_NULL_HANDLE;
+
+	VkBuffer bloomUBO = VK_NULL_HANDLE;
+	MemoryAllocator::HostVisibleMemory bloomUBOMemory;
 
 	/*
 	* called every frame - submit queues
@@ -321,7 +356,13 @@ private:
 	void createHDRBloomResources(bool createFramebufferOnly = false) {
 		hdrFramebuffer.init(&devices);
 		hdrFramebuffer.cleanup();
-		
+		brightFramebuffer.init(&devices);
+		brightFramebuffer.cleanup();
+		bloomFramebufferVert.init(&devices);
+		bloomFramebufferVert.cleanup();
+		bloomFramebufferHorz.init(&devices);
+		bloomFramebufferHorz.cleanup();
+
 		VkImageCreateInfo hdrImageInfo =
 			vktools::initializers::imageCreateInfo({ swapchain.extent.width, swapchain.extent.height, 1 },
 				VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -329,7 +370,15 @@ private:
 				VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
 			);
 
+		//hdr image
 		hdrFramebuffer.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		//contain only bright color (brightness > 1.f)
+		brightFramebuffer.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		//bloom vertical blur
+		bloomFramebufferVert.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		//bloom horizontal blur
+		bloomFramebufferHorz.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		//depth
 		hdrImageInfo.format = depthFormat;
 		hdrImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		hdrFramebuffer.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -337,11 +386,16 @@ private:
 		//renderpass
 		if (createFramebufferOnly == false) {
 			hdrRenderPass = hdrFramebuffer.createRenderPass();
+			brightRenderPass = brightFramebuffer.createRenderPass();
+
 			VkSamplerCreateInfo samplerInfo =
 				vktools::initializers::samplerCreateInfo(devices.availableFeatures, devices.properties);
 			VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
 		}
 		hdrFramebuffer.createFramebuffer(swapchain.extent, hdrRenderPass);
+		brightFramebuffer.createFramebuffer(swapchain.extent, brightRenderPass);
+		bloomFramebufferVert.createFramebuffer(swapchain.extent, brightRenderPass);
+		bloomFramebufferHorz.createFramebuffer(swapchain.extent, brightRenderPass);
 	}
 
 	/*
@@ -474,7 +528,6 @@ private:
 		state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
 		state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		gen.setColorBlendAttachmentState(state);
-		//gen.setColorBlendInfo(VK_TRUE);
 		gen.addDescriptorSetLayout({ hdrDescriptorSetLayout });
 		gen.addShader(
 			vktools::createShaderModule(devices.device, vktools::readFile("shaders/particle_vert.spv")),
@@ -486,6 +539,45 @@ private:
 		//generate pipeline layout & pipeline
 		gen.generate(hdrRenderPass, &hdrPipeline, &hdrPipelineLayout);
 
+		/*
+		* extract bright color
+		*/
+		gen.resetAll();
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+		gen.addDescriptorSetLayout({ brightDescriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_extract_bright_color_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+
+		//generate pipeline layout & pipeline
+		gen.generate(brightRenderPass, &brightPipeline, &brightPipelineLayout);
+
+		/*
+		* bloom pass
+		*/
+		gen.resetAll();
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+		gen.addDescriptorSetLayout({ bloomDescriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_bloom_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+		
+		uint32_t horizontalBlur = 0;
+		VkSpecializationMapEntry specializationMapEntry{ 0, 0, sizeof(uint32_t) };
+		VkSpecializationInfo specializationInfo{ 1, &specializationMapEntry, sizeof(uint32_t), &horizontalBlur };
+		auto stages = gen.getShaderStageCreateInfo();
+		stages[1].pSpecializationInfo = &specializationInfo;
+
+		//generate pipeline layout & pipeline
+		gen.generate(brightRenderPass, &bloomPipelineVert, &bloomPipelineLayout);
+		horizontalBlur = 1;
+		gen.generate(brightRenderPass, &bloomPipelineHorz, &bloomPipelineLayout);
 
 		/*
 		* final pass - full screen quad
@@ -539,7 +631,6 @@ private:
 			{3, offsetof(SpecializationData, soften), sizeof(float)}
 		};
 
-		VkSpecializationInfo specializationInfo{};
 		specializationInfo.mapEntryCount = static_cast<uint32_t>(entry.size());
 		specializationInfo.pMapEntries = entry.data();
 		specializationInfo.dataSize = sizeof(SpecializationData);
@@ -596,9 +687,11 @@ private:
 		std::vector<VkClearValue> hdrClearValues{};
 		hdrClearValues.resize(3);
 		hdrClearValues[0].color = clearColor;
-		hdrClearValues[1].color = clearColor;
-		hdrClearValues[2].depthStencil = { 1.f, 0 };
+		hdrClearValues[1].depthStencil = { 1.f, 0 };
 		hdrClearValues.shrink_to_fit();
+
+		VkClearValue brightClearValue{};
+		brightClearValue.color = clearColor;
 
 		std::vector<VkClearValue> clearValues{};
 		clearValues.resize(2);
@@ -614,6 +707,33 @@ private:
 		hdrRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(hdrClearValues.size());
 		hdrRenderPassBeginInfo.pClearValues = hdrClearValues.data();
 		hdrRenderPassBeginInfo.framebuffer = hdrFramebuffer.framebuffer;
+
+		VkRenderPassBeginInfo brightRenderPassBeginInfo{};
+		brightRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		brightRenderPassBeginInfo.renderPass = brightRenderPass;
+		brightRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		brightRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		brightRenderPassBeginInfo.clearValueCount = 1;
+		brightRenderPassBeginInfo.pClearValues = &brightClearValue;
+		brightRenderPassBeginInfo.framebuffer = brightFramebuffer.framebuffer;
+
+		VkRenderPassBeginInfo bloomVertRenderPassBeginInfo{};
+		bloomVertRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		bloomVertRenderPassBeginInfo.renderPass = brightRenderPass;
+		bloomVertRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		bloomVertRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		bloomVertRenderPassBeginInfo.clearValueCount = 1;
+		bloomVertRenderPassBeginInfo.pClearValues = &brightClearValue;
+		bloomVertRenderPassBeginInfo.framebuffer = bloomFramebufferVert.framebuffer;
+
+		VkRenderPassBeginInfo bloomHorzRenderPassBeginInfo{};
+		bloomHorzRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		bloomHorzRenderPassBeginInfo.renderPass = brightRenderPass;
+		bloomHorzRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		bloomHorzRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		bloomHorzRenderPassBeginInfo.clearValueCount = 1;
+		bloomHorzRenderPassBeginInfo.pClearValues = &brightClearValue;
+		bloomHorzRenderPassBeginInfo.framebuffer = bloomFramebufferHorz.framebuffer;
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -640,6 +760,45 @@ private:
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &particleBuffer, &offsets);
 
 			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
+			/*
+			* extract bright color
+			*/
+			vkCmdBeginRenderPass(commandBuffers[i], &brightRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, brightPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, brightPipelineLayout, 0, 1,
+				&brightDescriptorSet, 0, nullptr);
+
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
+			/*
+			* bloom pass vert
+			*/
+			vkCmdBeginRenderPass(commandBuffers[i], &bloomVertRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, bloomPipelineVert);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, bloomPipelineLayout, 0, 1,
+				&bloomDescriptorSetVert, 0, nullptr);
+
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
+			/*
+			* bloom pass horz
+			*/
+			vkCmdBeginRenderPass(commandBuffers[i], &bloomHorzRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, bloomPipelineHorz);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, bloomPipelineLayout, 0, 1,
+				&bloomDescriptorSetHorz, 0, nullptr);
+
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
 
 			/*
@@ -739,6 +898,12 @@ private:
 					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		}
 
+		VkBufferCreateInfo bloomUBOCreateInfo =
+			vktools::initializers::bufferCreateInfo(VkDeviceSize(sizeof(uint32_t)), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bloomUBOCreateInfo, nullptr, &bloomUBO));
+		bloomUBOMemory = devices.memoryAllocator.allocateBufferMemory(
+			bloomUBO, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
 		//compute shader ubo
 		VkDeviceSize computeUBOSize = sizeof(ComputeUBO);
 		VkBufferCreateInfo computeUBOCreateInfo = 
@@ -756,6 +921,8 @@ private:
 	void updateUniformBuffer(size_t currentFrame) {
 		//graphics
 		cameraUBOMemories[currentFrame].mapData(devices.device, &cameraMatrices);
+		Imgui* imgui = static_cast<Imgui*>(imguiBase);
+		bloomUBOMemory.mapData(devices.device, &imgui->userInput.enableBloom);
 		//compute
 		ubo.dt = dt;
 		computeUBOMemories.mapData(devices.device, &ubo);
@@ -772,8 +939,24 @@ private:
 		hdrDescriptorSetLayout = hdrBindings.createDescriptorSetLayout(devices.device);
 		hdrDescriptorSet = vktools::allocateDescriptorSets(devices.device, hdrDescriptorSetLayout, hdrDescriptorPool, 1).front();
 
+		//bright color pass
+		brightBindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image from hdr pass
+		brightDescriptorPool = brightBindings.createDescriptorPool(devices.device, 1);
+		brightDescriptorSetLayout = brightBindings.createDescriptorSetLayout(devices.device);
+		brightDescriptorSet = vktools::allocateDescriptorSets(devices.device, brightDescriptorSetLayout, brightDescriptorPool, 1).front();
+
+		//bloom pass
+		bloomBindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image from bright color pass
+		bloomDescriptorPool = bloomBindings.createDescriptorPool(devices.device, 2);
+		bloomDescriptorSetLayout = bloomBindings.createDescriptorSetLayout(devices.device);
+		std::vector<VkDescriptorSet> descSets = vktools::allocateDescriptorSets(devices.device, bloomDescriptorSetLayout, bloomDescriptorPool, 2);
+		bloomDescriptorSetVert = descSets[0];
+		bloomDescriptorSetHorz = descSets[1];
+
 		//graphics
 		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image from hdr pass
+		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image bloom pass
+		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image bloom pass
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -796,24 +979,43 @@ private:
 		std::vector<VkWriteDescriptorSet> writes;
 		writes.push_back(hdrBindings.makeWrite(hdrDescriptorSet, 0, &cameraUBObufferInfo));
 		writes.push_back(hdrBindings.makeWrite(hdrDescriptorSet, 1, &particleTex.descriptor));
-		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
+		//bright color pass
 		VkDescriptorImageInfo hdrImageInfo = { offscreenSampler,
 			hdrFramebuffer.attachments[0].imageView,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		writes.push_back(brightBindings.makeWrite(brightDescriptorSet, 0, &hdrImageInfo));
+
+		//bloom pass vertical blur
+		VkDescriptorImageInfo brightImageInfo = { offscreenSampler,
+			brightFramebuffer.attachments[0].imageView,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		writes.push_back(bloomBindings.makeWrite(bloomDescriptorSetVert, 0, &brightImageInfo));
+
+		//bloom pass vertical blur
+		VkDescriptorImageInfo bloomVertImageInfo = { offscreenSampler,
+			bloomFramebufferVert.attachments[0].imageView,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		writes.push_back(bloomBindings.makeWrite(bloomDescriptorSetHorz, 0, &bloomVertImageInfo));
 
 		//graphics
+		VkDescriptorImageInfo bloomHorzImageInfo = { offscreenSampler,
+			bloomFramebufferHorz.attachments[0].imageView,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		VkDescriptorBufferInfo bloomUBObufferInfo{ bloomUBO, 0, sizeof(uint32_t) };
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VkWriteDescriptorSet write = bindings.makeWrite(descriptorSets[i], 0, &hdrImageInfo);
-			vkUpdateDescriptorSets(devices.device, 1, &write, 0, nullptr);
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &hdrImageInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &bloomHorzImageInfo));
+			writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &bloomUBObufferInfo));
 		}
 
 		//compute
 		VkDescriptorBufferInfo vertexBufferInfo{ particleBuffer, 0, particleBufferSize };
 		VkDescriptorBufferInfo computeUBOInfo{ computeUBO, 0, sizeof(ComputeUBO)};
-		writes.clear();
 		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 0, &vertexBufferInfo));
 		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 1, &computeUBOInfo));
+
+		//update all of descriptor sets
 		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
 };

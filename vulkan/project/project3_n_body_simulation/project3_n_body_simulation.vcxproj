@@ -85,6 +85,8 @@
   <ItemGroup>
     <None Include="shaders\full_quad.frag" />
     <None Include="shaders\full_quad.vert" />
+    <None Include="shaders\full_quad_bloom.frag" />
+    <None Include="shaders\full_quad_extract_bright_color.frag" />
     <None Include="shaders\particle.frag" />
     <None Include="shaders\particle.vert" />
     <None Include="shaders\particle_compute.comp" />

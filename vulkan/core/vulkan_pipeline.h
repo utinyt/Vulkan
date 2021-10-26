@@ -8,6 +8,9 @@ class PipelineGenerator {
 public:
 	/** ctor */
 	PipelineGenerator(VkDevice device);
+	~PipelineGenerator() {
+		resetAll();
+	}
 	/** @brief init / reset all create info */
 	void resetAll();
 	/** @brief only reset shader & vertex binding & attribute descriptions */
@@ -49,6 +52,9 @@ public:
 	/** @brief struct getters */
 	VkPipelineDepthStencilStateCreateInfo& getPipelineDepthStencilStateCreateInfo() {
 		return depthStencilStateCreateInfo;
+	}
+	std::vector<VkPipelineShaderStageCreateInfo>& getShaderStageCreateInfo() {
+		return shaderStages;
 	}
 
 private:
