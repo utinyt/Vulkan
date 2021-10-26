@@ -89,4 +89,6 @@ void setupDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInf
 		VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 		VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 	createInfo.pfnUserCallback = debugCallback;
+
+	//createInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT; // synchronization validation
 }

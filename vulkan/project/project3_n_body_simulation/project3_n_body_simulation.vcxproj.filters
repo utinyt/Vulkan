@@ -35,5 +35,11 @@
     <None Include="shaders\particle_update.comp">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\full_quad.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\full_quad.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

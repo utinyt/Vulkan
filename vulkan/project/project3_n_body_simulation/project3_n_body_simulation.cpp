@@ -10,6 +10,7 @@
 #include "core/vulkan_imgui.h"
 #include "core/vulkan_texture.h"
 #include "core/vulkan_pipeline.h"
+#include "core/vulkan_framebuffer.h"
 
 namespace {
 	std::random_device device;
@@ -59,6 +60,8 @@ public:
 		vkDestroyDescriptorSetLayout(devices.device, descriptorSetLayout, nullptr);
 		vkDestroyDescriptorPool(devices.device, computeDescriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(devices.device, computeDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(devices.device, hdrDescriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(devices.device, hdrDescriptorSetLayout, nullptr);
 
 		//uniform buffers
 		for (size_t i = 0; i < cameraUBO.size(); ++i) {
@@ -87,6 +90,15 @@ public:
 		vkDestroyPipeline(devices.device, computePipelineCompute, nullptr);
 		vkDestroyPipeline(devices.device, computePipelineUpdate, nullptr);
 		vkDestroyPipelineLayout(devices.device, computePipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, hdrPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, hdrPipelineLayout, nullptr);
+		vkDestroyRenderPass(devices.device, hdrRenderPass, nullptr);
+		vkDestroyPipeline(devices.device, bloomPipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, bloomPipelineLayout, nullptr);
+		vkDestroyRenderPass(devices.device, bloomRenderPass, nullptr);
+		vkDestroySampler(devices.device, offscreenSampler, nullptr);
+
+		hdrFramebuffer.cleanup();
 
 		//semaphore
 		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -122,6 +134,7 @@ public:
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
 		
+		createHDRBloomResources();
 		createDescriptorSet();
 		createPipeline();
 		createFramebuffers();
@@ -209,6 +222,29 @@ private:
 	std::vector<VkCommandBuffer> computeCommandBuffers;
 
 	/*
+	* hdr & bloom resources
+	*/
+	/** offscreen (hdr) framebuffer */
+	//TODO: prepare MAX_FRAMES_IN_FLIGHT sets of framebuffers
+	Framebuffer hdrFramebuffer, bloomFramebuffer;
+	/** render passes */
+	VkRenderPass hdrRenderPass = VK_NULL_HANDLE, bloomRenderPass = VK_NULL_HANDLE;
+	/** sampler */
+	VkSampler offscreenSampler = VK_NULL_HANDLE;
+	/** pipelines */
+	VkPipeline hdrPipeline = VK_NULL_HANDLE, bloomPipeline = VK_NULL_HANDLE;
+	/** pipelines */
+	VkPipelineLayout hdrPipelineLayout = VK_NULL_HANDLE, bloomPipelineLayout = VK_NULL_HANDLE;
+	/** descriptor set bindings */
+	DescriptorSetBindings hdrBindings, bloomBindings;
+	/** descriptor pools */
+	VkDescriptorPool hdrDescriptorPool = VK_NULL_HANDLE, bloomDescriptorPool = VK_NULL_HANDLE;
+	/** descriptor set layouts */
+	VkDescriptorSetLayout hdrDescriptorSetLayout = VK_NULL_HANDLE, bloomDescriptorSetLayout = VK_NULL_HANDLE;
+	/** descriptor sets */
+	VkDescriptorSet hdrDescriptorSet = VK_NULL_HANDLE, bloomDescriptorSet = VK_NULL_HANDLE;
+
+	/*
 	* called every frame - submit queues
 	*/
 	virtual void draw() override {
@@ -280,12 +316,41 @@ private:
 	}
 
 	/*
+	* create framebuffers & renderpasses for hdr / bloom passes
+	*/
+	void createHDRBloomResources(bool createFramebufferOnly = false) {
+		hdrFramebuffer.init(&devices);
+		hdrFramebuffer.cleanup();
+		
+		VkImageCreateInfo hdrImageInfo =
+			vktools::initializers::imageCreateInfo({ swapchain.extent.width, swapchain.extent.height, 1 },
+				VK_FORMAT_R16G16B16A16_SFLOAT,
+				VK_IMAGE_TILING_OPTIMAL,
+				VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+			);
+
+		hdrFramebuffer.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		hdrImageInfo.format = depthFormat;
+		hdrImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		hdrFramebuffer.addAttachment(hdrImageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		//renderpass
+		if (createFramebufferOnly == false) {
+			hdrRenderPass = hdrFramebuffer.createRenderPass();
+			VkSamplerCreateInfo samplerInfo =
+				vktools::initializers::samplerCreateInfo(devices.availableFeatures, devices.properties);
+			VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
+		}
+		hdrFramebuffer.createFramebuffer(swapchain.extent, hdrRenderPass);
+	}
+
+	/*
 	* return a random point on s surface of sphere - naive
 	*/
 	glm::vec3 getRandomPointOnSphere(const glm::vec3& center, float radius) {
 		float PI = 3.141592f;
-		float theta = 2 * PI * rdFloat(RNGen);
-		float phi = PI * rdFloat(RNGen);
+		float theta = 2 * PI * static_cast<float>(rdFloat(RNGen));
+		float phi = PI * static_cast<float>(rdFloat(RNGen));
 		float x = std::sin(phi) * std::cos(theta);
 		float y = std::sin(phi) * std::sin(theta);
 		float z = std::cos(phi);
@@ -387,7 +452,7 @@ private:
 		}
 
 		/*
-		* graphics pipeline
+		* hdr pass
 		*/
 		PipelineGenerator gen(devices.device);
 		gen.addVertexInputBindingDescription({ {0, sizeof(Particle), VK_VERTEX_INPUT_RATE_VERTEX} });
@@ -410,7 +475,7 @@ private:
 		state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		gen.setColorBlendAttachmentState(state);
 		//gen.setColorBlendInfo(VK_TRUE);
-		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addDescriptorSetLayout({ hdrDescriptorSetLayout });
 		gen.addShader(
 			vktools::createShaderModule(devices.device, vktools::readFile("shaders/particle_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
@@ -419,7 +484,25 @@ private:
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate pipeline layout & pipeline
+		gen.generate(hdrRenderPass, &hdrPipeline, &hdrPipelineLayout);
+
+
+		/*
+		* final pass - full screen quad
+		*/
+		gen.resetAll();
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
+		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/full_quad_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+
+		//generate pipeline layout & pipeline
 		gen.generate(renderPass, &pipeline, &pipelineLayout);
+
 
 		/*
 		* compute pipeline
@@ -510,11 +593,27 @@ private:
 	virtual void recordCommandBuffer() override {
 		VkCommandBufferBeginInfo cmdBufBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 
+		std::vector<VkClearValue> hdrClearValues{};
+		hdrClearValues.resize(3);
+		hdrClearValues[0].color = clearColor;
+		hdrClearValues[1].color = clearColor;
+		hdrClearValues[2].depthStencil = { 1.f, 0 };
+		hdrClearValues.shrink_to_fit();
+
 		std::vector<VkClearValue> clearValues{};
 		clearValues.resize(2);
 		clearValues[0].color = clearColor;
 		clearValues[1].depthStencil = { 1.f, 0 };
 		clearValues.shrink_to_fit();
+
+		VkRenderPassBeginInfo hdrRenderPassBeginInfo{};
+		hdrRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		hdrRenderPassBeginInfo.renderPass = hdrRenderPass;
+		hdrRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		hdrRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		hdrRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(hdrClearValues.size());
+		hdrRenderPassBeginInfo.pClearValues = hdrClearValues.data();
+		hdrRenderPassBeginInfo.framebuffer = hdrFramebuffer.framebuffer;
 
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -527,6 +626,25 @@ private:
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
 
+			/*
+			* hdr pass
+			*/
+			vkCmdBeginRenderPass(commandBuffers[i], &hdrRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hdrPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hdrPipelineLayout, 0, 1,
+				&hdrDescriptorSet, 0, nullptr);
+
+			VkDeviceSize offsets = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &particleBuffer, &offsets);
+
+			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffers[i]);
+
+			/*
+			* final pass - full screen quad
+			*/
 			size_t framebufferIndex = i % framebuffers.size();
 			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -539,10 +657,7 @@ private:
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
-			VkDeviceSize offsets = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &particleBuffer, &offsets);
-
-			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
+			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 
 			/*
 			* imgui
@@ -650,9 +765,15 @@ private:
 	* set descriptor bindings & allocate destcriptor sets
 	*/
 	void createDescriptorSet() {
+		//hdr pass
+		hdrBindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); //particle (vertex) buffer
+		hdrBindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // camera ubo
+		hdrDescriptorPool = hdrBindings.createDescriptorPool(devices.device, 1);
+		hdrDescriptorSetLayout = hdrBindings.createDescriptorSetLayout(devices.device);
+		hdrDescriptorSet = vktools::allocateDescriptorSets(devices.device, hdrDescriptorSetLayout, hdrDescriptorPool, 1).front();
+
 		//graphics
-		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		bindings.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); //image from hdr pass
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
 		descriptorSets = vktools::allocateDescriptorSets(devices.device, descriptorSetLayout, descriptorPool, MAX_FRAMES_IN_FLIGHT);
@@ -669,20 +790,28 @@ private:
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
+		//hdr pass
+		//TODO: prepare MAX_FRAMES_IN_FLIGHT sets of descriptor sets
+		VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[0], 0, sizeof(CameraMatrices) };
+		std::vector<VkWriteDescriptorSet> writes;
+		writes.push_back(hdrBindings.makeWrite(hdrDescriptorSet, 0, &cameraUBObufferInfo));
+		writes.push_back(hdrBindings.makeWrite(hdrDescriptorSet, 1, &particleTex.descriptor));
+		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+		VkDescriptorImageInfo hdrImageInfo = { offscreenSampler,
+			hdrFramebuffer.attachments[0].imageView,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
 		//graphics
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
-
-			std::vector<VkWriteDescriptorSet> writes;
-			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &cameraUBObufferInfo));
-			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &particleTex.descriptor));
-			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+			VkWriteDescriptorSet write = bindings.makeWrite(descriptorSets[i], 0, &hdrImageInfo);
+			vkUpdateDescriptorSets(devices.device, 1, &write, 0, nullptr);
 		}
 
 		//compute
 		VkDescriptorBufferInfo vertexBufferInfo{ particleBuffer, 0, particleBufferSize };
 		VkDescriptorBufferInfo computeUBOInfo{ computeUBO, 0, sizeof(ComputeUBO)};
-		std::vector<VkWriteDescriptorSet> writes;
+		writes.clear();
 		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 0, &vertexBufferInfo));
 		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 1, &computeUBOInfo));
 		vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);

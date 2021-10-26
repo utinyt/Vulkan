@@ -83,6 +83,8 @@
     <ClCompile Include="project3_n_body_simulation.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\full_quad.frag" />
+    <None Include="shaders\full_quad.vert" />
     <None Include="shaders\particle.frag" />
     <None Include="shaders\particle.vert" />
     <None Include="shaders\particle_compute.comp" />
