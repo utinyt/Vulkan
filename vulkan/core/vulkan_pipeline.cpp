@@ -149,6 +149,28 @@ void PipelineGenerator::setColorBlendInfo(VkBool32 blendEnable, uint32_t nbColor
 }
 
 /*
+* (re)set color blend attachment state
+* 
+* @param attachmentState
+*/
+void PipelineGenerator::setColorBlendAttachmentState(
+	const VkPipelineColorBlendAttachmentState& attachmentState, 
+	uint32_t nbColorAttachment) {
+	colorBlendAttachmentStates.clear();
+	for (uint32_t i = 0; i < nbColorAttachment; ++i) {
+		colorBlendAttachmentStates.push_back(attachmentState);
+	}
+
+	colorBlendAttachmentStates.shrink_to_fit();
+
+	colorBlendStateCreateInfo =
+		vktools::initializers::pipelineColorBlendStateCreateInfo(
+			static_cast<uint32_t>(colorBlendAttachmentStates.size()),
+			colorBlendAttachmentStates.data()
+		);
+}
+
+/*
 * (re)set depth stencil state info 
 * 
 * @param depthTest

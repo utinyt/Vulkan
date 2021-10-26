@@ -71,6 +71,7 @@ void VulkanAppBase::init() {
 	initVulkan();
 	LOG("vulkan initialization completed\n");
 	initApp();
+	updateCamera();
 	LOG("application initialization completed\n");
 }
 

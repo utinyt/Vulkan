@@ -102,8 +102,8 @@ public:
 		VulkanAppBase::initApp();
 
 		//init cap setting
-		camera.camPos = glm::vec3(20.f, 20.f, 20.f);
-		camera.camFront = -camera.camPos;
+		camera.camPos = glm::vec3(0.f, 0.f, 20.f);
+		camera.camFront = glm::normalize(-camera.camPos);
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
 		//create particle vertex buffer
@@ -162,7 +162,7 @@ private:
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
 	/** clear color */
-	VkClearColorValue clearColor{0.1f, 0.1f, 0.1f, 1.f};
+	VkClearColorValue clearColor{0.0f, 0.0f, 0.0f, 1.f};
 	/** uniform buffer handle */
 	std::vector<VkBuffer> cameraUBO;
 	/**  uniform buffer memory handle */
@@ -314,7 +314,7 @@ private:
 			for (uint32_t j = 0; j < particlePerAttractor; ++j) {
 				Particle& particle = particles[i * particlePerAttractor + j];
 				if (j == 0) {
-					particle.posm = glm::vec4(attractors[i] * 1.5f, 90000.f);
+					particle.posm = glm::vec4(attractors[i] * 1.5f, (static_cast<float>(rdFloat(RNGen)) * 0.5f + 0.5f) * 75.f);
 					particle.vel = glm::vec4(0.f);
 				}
 				else {
@@ -398,7 +398,18 @@ private:
 		gen.setInputTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
 		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE);
 		gen.setDepthStencilInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);
-		gen.setColorBlendInfo(VK_TRUE);
+
+		VkPipelineColorBlendAttachmentState state{};
+		state.blendEnable = VK_TRUE;
+		state.colorWriteMask = 0xF;
+		state.colorBlendOp = VK_BLEND_OP_ADD;
+		state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		state.alphaBlendOp = VK_BLEND_OP_ADD;
+		state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		gen.setColorBlendAttachmentState(state);
+		//gen.setColorBlendInfo(VK_TRUE);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addShader(
 			vktools::createShaderModule(devices.device, vktools::readFile("shaders/particle_vert.spv")),
