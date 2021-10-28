@@ -34,7 +34,7 @@ void main(){
 	vec4 vel = particles[index].vel;
 	vec4 acceleration = vec4(0.f);
 
-	for(int i = 0; i < ubo.particleNum; i += SHARED_DATA_SIZE){
+	for(int i = 0; i < ubo.particleNum; i += 256){
 		uint particleIndex = i + uint(gl_LocalInvocationID.x);
 		if(particleIndex < ubo.particleNum){
 			sharedData[gl_LocalInvocationID.x] = particles[particleIndex].posm;

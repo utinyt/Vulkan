@@ -13,6 +13,6 @@ void main(){
 	float spriteSize = 0.005f * inPosMass.w;
 	vec4 viewPos = ubo.view * vec4(inPosMass.xyz, 1.f);
 	vec4 projectedCorner = ubo.proj * vec4(0.5 * spriteSize, 0.5 * spriteSize, viewPos.z, viewPos.w);
-	gl_PointSize = clamp(1200 * projectedCorner.x / projectedCorner.w, 1.f, 128.f);
+	gl_PointSize = clamp(1200 * projectedCorner.x / projectedCorner.w, 1.f, 128.f) * 2.f;
 	gl_Position = ubo.proj * viewPos;
 }

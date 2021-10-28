@@ -183,7 +183,7 @@ void VulkanAppBase::updateCamera() {
 
 	cameraMatrices.view = glm::lookAt(camera.camPos, camera.camPos + camera.camFront, camera.camUp);
 	cameraMatrices.proj = glm::perspective(glm::radians(45.f),
-		swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 100.f);
+		swapchain.extent.width / (float)swapchain.extent.height, 0.1f, 1000.f);
 	cameraMatrices.proj[1][1] *= -1;
 }
 

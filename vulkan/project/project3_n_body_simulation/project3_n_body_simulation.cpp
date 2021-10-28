@@ -24,7 +24,9 @@ public:
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
-		ImGui::Checkbox("Bloom", &userInput.enableBloom);
+		ImGui::Checkbox("HDR", &userInput.enableHDR);
+		if(userInput.enableHDR == true)
+			ImGui::Checkbox("Bloom", &userInput.enableBloom);
 
 		ImGui::End();
 		ImGui::Render();
@@ -32,6 +34,7 @@ public:
 
 	/* user input collection */
 	struct UserInput {
+		bool enableHDR= true;
 		bool enableBloom = true;
 	} userInput;
 };
@@ -80,9 +83,11 @@ public:
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		vkDestroyBuffer(devices.device, computeUBO, nullptr);
 
-		devices.memoryAllocator.freeBufferMemory(bloomUBO,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		vkDestroyBuffer(devices.device, bloomUBO, nullptr);
+		for (auto& hdrUBOBuffer : hdrUBO) {
+			devices.memoryAllocator.freeBufferMemory(hdrUBOBuffer,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			vkDestroyBuffer(devices.device, hdrUBOBuffer, nullptr);
+		}
 
 		//model & floor buffer & skybox buffers
 		devices.memoryAllocator.freeBufferMemory(particleBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -133,7 +138,7 @@ public:
 		VulkanAppBase::initApp();
 
 		//init cap setting
-		camera.camPos = glm::vec3(0.f, 0.f, 20.f);
+		camera.camPos = glm::vec3(0.f, 0.f, 150.f);
 		camera.camFront = glm::normalize(-camera.camPos);
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
@@ -163,7 +168,8 @@ public:
 			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
 		recordCommandBuffer();
 		createComputeSemaphore();
-		recordComputeCommandBuffer();
+		createComputeCommandBuffers();
+		recordComputeCommandBuffers();
 	}
 
 private:
@@ -276,8 +282,13 @@ private:
 		bloomDescriptorSetVert = VK_NULL_HANDLE,
 		bloomDescriptorSetHorz = VK_NULL_HANDLE;
 
-	VkBuffer bloomUBO = VK_NULL_HANDLE;
-	MemoryAllocator::HostVisibleMemory bloomUBOMemory;
+	struct HDRUBO {
+		uint32_t enableHDR = 1;
+		uint32_t enableBloom = 1;
+	} hdrubo;
+
+	std::vector<VkBuffer> hdrUBO;
+	std::vector<MemoryAllocator::HostVisibleMemory> hdrUBOMemories;
 
 	/*
 	* called every frame - submit queues
@@ -346,7 +357,13 @@ private:
 		VulkanAppBase::resizeWindow(false);
 		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 
+		createHDRBloomResources(true);
 		updateDescriptorSets();
+
+		destroyComputeCommandBuffers();
+		createComputeCommandBuffers();
+		recordComputeCommandBuffers();
+
 		recordCommandBuffer();
 	}
 
@@ -404,7 +421,7 @@ private:
 	glm::vec3 getRandomPointOnSphere(const glm::vec3& center, float radius) {
 		float PI = 3.141592f;
 		float theta = 2 * PI * static_cast<float>(rdFloat(RNGen));
-		float phi = PI * static_cast<float>(rdFloat(RNGen));
+		float phi = std::acos(1.f - 2 * static_cast<float>(rdFloat(RNGen)));
 		float x = std::sin(phi) * std::cos(theta);
 		float y = std::sin(phi) * std::sin(theta);
 		float z = std::cos(phi);
@@ -416,15 +433,10 @@ private:
 	*/
 	void createParticles() {
 		std::vector<glm::vec3> attractors{
-			glm::vec3(5.f, 0.f, 0.f),
-			glm::vec3(-5.f, 0.f, 0.f),
-			glm::vec3(0.f, 0.f, 5.f),
-			glm::vec3(0.f, 0.f, -5.f),
-			glm::vec3(0.f, 4.f, 0.f),
-			glm::vec3(0.f, -8.f, 0.f)
+			glm::vec3(0.f, 0.f, 0.f)
 		};
 
-		const uint32_t particlePerAttractor = 4096;
+		const uint32_t particlePerAttractor = 65536;
 		particleNum = static_cast<uint32_t>(attractors.size()) * particlePerAttractor;
 		ubo.particleNum = particleNum;
 		std::vector<Particle> particles(particleNum);
@@ -433,13 +445,13 @@ private:
 			for (uint32_t j = 0; j < particlePerAttractor; ++j) {
 				Particle& particle = particles[i * particlePerAttractor + j];
 				if (j == 0) {
-					particle.posm = glm::vec4(attractors[i] * 1.5f, (static_cast<float>(rdFloat(RNGen)) * 0.5f + 0.5f) * 75.f);
+					particle.posm = glm::vec4(0, 0, 0, 10);//glm::vec4(attractors[i] * 1.5f, (static_cast<float>(rdFloat(RNGen)) * 0.5f + 0.5f) * .0075f);
 					particle.vel = glm::vec4(0.f);
 				}
 				else {
-					glm::vec3 pos = attractors[i] + glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen)) * 0.75f;
+					glm::vec3 pos = getRandomPointOnSphere(glm::vec3(0.f, 0.f, 0.f), 30.f);//attractors[i] + glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen)) * 0.0075f;
 					glm::vec3 angular = glm::vec3(0.5f, 1.5f, 0.5f) * (((i % 2) == 0) ? 1.f : -1.f);
-					glm::vec3 vel = glm::cross((pos - attractors[i]), angular) + glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen) * 0.025f);
+					glm::vec3 vel = glm::vec3(0.f);//glm::cross((pos - attractors[i]), angular) + glm::vec3(rdFloat(RNGen), rdFloat(RNGen), rdFloat(RNGen) * 0.025f);
 					float mass = (static_cast<float>(rdFloat(RNGen)) * 0.5f + 0.5f) * 75.f;
 					particle.posm = glm::vec4(pos, mass);
 					particle.vel = glm::vec4(vel, 0.f);
@@ -620,8 +632,8 @@ private:
 		} specializationData;
 
 		specializationData.sharedDataSize = std::min((uint32_t)1024, (uint32_t)(devices.properties.limits.maxComputeSharedMemorySize / sizeof(glm::vec4)));
-		specializationData.gravity = 0.0002f;
-		specializationData.power = 0.75f;
+		specializationData.gravity = 0.00002f;
+		specializationData.power = .75f;
 		specializationData.soften = 0.05f;
 
 		std::vector<VkSpecializationMapEntry> entry = {
@@ -830,16 +842,34 @@ private:
 	}
 
 	/*
-	* record compute command buffer
+	* create command buffers used in compute pipeline
 	*/
-	void recordComputeCommandBuffer() {
+	void createComputeCommandBuffers() {
 		//create command buffers
 		computeCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-		VkCommandBufferAllocateInfo compCmdBufInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+		VkCommandBufferAllocateInfo compCmdBufInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
 		compCmdBufInfo.commandPool = devices.commandPool;
 		compCmdBufInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		compCmdBufInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
 		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &compCmdBufInfo, computeCommandBuffers.data()));
+		LOG("created:\t compute command buffers");
+	}
+
+	/*
+	* destroy compute command buffer
+	*/
+	void destroyComputeCommandBuffers() {
+		if (!computeCommandBuffers.empty()) {
+			vkFreeCommandBuffers(devices.device, devices.commandPool,
+				static_cast<uint32_t>(computeCommandBuffers.size()), computeCommandBuffers.data());
+		}
+	}
+
+	/*
+	* record compute command buffer
+	*/
+	void recordComputeCommandBuffers() {
+		
 
 		//record command buffers
 		VkCommandBufferBeginInfo cmdBufBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
@@ -888,21 +918,23 @@ private:
 		VkDeviceSize cameraUBOSize = sizeof(CameraMatrices);
 		cameraUBO.resize(MAX_FRAMES_IN_FLIGHT);
 		cameraUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
+		hdrUBO.resize(MAX_FRAMES_IN_FLIGHT);
+		hdrUBOMemories.resize(MAX_FRAMES_IN_FLIGHT);
 
 		VkBufferCreateInfo cameraUBOCreateInfo = 
 			vktools::initializers::bufferCreateInfo(cameraUBOSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		VkBufferCreateInfo bloomUBOCreateInfo =
+			vktools::initializers::bufferCreateInfo(VkDeviceSize(sizeof(HDRUBO)), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &cameraUBOCreateInfo, nullptr, &cameraUBO[i]));
 			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
 					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		}
 
-		VkBufferCreateInfo bloomUBOCreateInfo =
-			vktools::initializers::bufferCreateInfo(VkDeviceSize(sizeof(uint32_t)), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-		VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bloomUBOCreateInfo, nullptr, &bloomUBO));
-		bloomUBOMemory = devices.memoryAllocator.allocateBufferMemory(
-			bloomUBO, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &bloomUBOCreateInfo, nullptr, &hdrUBO[i]));
+			hdrUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
+				hdrUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		}
 
 		//compute shader ubo
 		VkDeviceSize computeUBOSize = sizeof(ComputeUBO);
@@ -921,8 +953,11 @@ private:
 	void updateUniformBuffer(size_t currentFrame) {
 		//graphics
 		cameraUBOMemories[currentFrame].mapData(devices.device, &cameraMatrices);
+		
 		Imgui* imgui = static_cast<Imgui*>(imguiBase);
-		bloomUBOMemory.mapData(devices.device, &imgui->userInput.enableBloom);
+		hdrubo.enableHDR = imgui->userInput.enableHDR;
+		hdrubo.enableBloom = imgui->userInput.enableBloom;
+		hdrUBOMemories[currentFrame].mapData(devices.device, &hdrubo);
 		//compute
 		ubo.dt = dt;
 		computeUBOMemories.mapData(devices.device, &ubo);
@@ -1002,10 +1037,11 @@ private:
 		VkDescriptorImageInfo bloomHorzImageInfo = { offscreenSampler,
 			bloomFramebufferHorz.attachments[0].imageView,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-		VkDescriptorBufferInfo bloomUBObufferInfo{ bloomUBO, 0, sizeof(uint32_t) };
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 0, &hdrImageInfo));
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 1, &bloomHorzImageInfo));
+
+			VkDescriptorBufferInfo bloomUBObufferInfo{ hdrUBO[i], 0, sizeof(HDRUBO) };
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &bloomUBObufferInfo));
 		}
 
