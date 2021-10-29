@@ -47,7 +47,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
-		MAX_FRAMES_IN_FLIGHT = 2;
+		MAX_FRAMES_IN_FLIGHT = 1;
 	}
 
 	/*
@@ -462,10 +462,6 @@ private:
 			bloomFramebufferVerts[i].createFramebuffer(swapchain.extent, bloomRenderPass);
 			bloomFramebufferHorzs[i].createFramebuffer(swapchain.extent, bloomRenderPass);
 		}
-		std::swap(hdrFramebuffers[0], hdrFramebuffers[1]);
-		std::swap(brightFramebuffers[0], brightFramebuffers[1]);
-		std::swap(bloomFramebufferVerts[0], bloomFramebufferVerts[1]);
-		std::swap(bloomFramebufferHorzs[0], bloomFramebufferHorzs[1]);
 	}
 
 	/*
@@ -805,7 +801,6 @@ private:
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
 			//const size_t resourceIndex = (i / framebuffers.size() + (MAX_FRAMES_IN_FLIGHT - 1)) % MAX_FRAMES_IN_FLIGHT;
 			const size_t resourceIndex = i / framebuffers.size();
-			std::cout << resourceIndex << std::endl;
 			/*
 			* hdr pass
 			*/
