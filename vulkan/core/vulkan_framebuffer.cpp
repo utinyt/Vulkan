@@ -43,6 +43,11 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 	VkImageAspectFlags imageAspect = 0;
 	if (imageCreateInfo.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
 		imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
+
+		VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
+		vktools::setImageLayout(cmdBuf, attachment.image, VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, { imageAspect, 0, 1, 0, 1 });
+		devices->endCommandBuffer(cmdBuf);
 	}
 	else if (imageCreateInfo.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
 		if (vktools::hasDepthComponent(imageCreateInfo.format)) {
@@ -51,6 +56,11 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 		if (vktools::hasStencilComponent(imageCreateInfo.format)) {
 			imageAspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
 		}
+
+		VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
+		vktools::setImageLayout(cmdBuf, attachment.image, VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, { imageAspect, 0, 1, 0, 1 });
+		devices->endCommandBuffer(cmdBuf);
 	}
 	
 	//create image view
@@ -72,9 +82,11 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 	
 	if (imageAspect & VK_IMAGE_ASPECT_DEPTH_BIT || imageAspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachment.description.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 	else {
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		attachment.description.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
 
 	attachments.push_back(attachment);
@@ -83,13 +95,11 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 /*
 * create render pass & framebuffer based on added attachments
 */
-VkRenderPass Framebuffer::createRenderPass() {
+VkRenderPass Framebuffer::createRenderPass(const std::vector<VkSubpassDependency>& dependencies) {
 	std::vector<VkAttachmentDescription> attachmentDescriptions;
 	std::vector<VkAttachmentReference> colorReferences{};
 	VkAttachmentReference depthReference{};
 	bool colorAttachmentFound = true, depthAttachmentFound = false;
-	VkPipelineStageFlags stageMask = 0;
-	VkAccessFlags accessMask = 0;
 
 	for (size_t i = 0; i < attachments.size(); ++i) {
 		attachmentDescriptions.push_back(attachments[i].description);
@@ -111,30 +121,12 @@ VkRenderPass Framebuffer::createRenderPass() {
 		}
 	}
 
-	if (colorAttachmentFound) {
-		stageMask	|= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		accessMask	|= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	}
-	if (depthAttachmentFound) {
-		stageMask	|= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		accessMask	|= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-	}
-
 	//subpass
 	VkSubpassDescription subpass{};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
 	subpass.pColorAttachments = colorReferences.data();
 	subpass.pDepthStencilAttachment = depthAttachmentFound ? &depthReference : nullptr;
-
-	//subpass dependency
-	VkSubpassDependency dependency{};
-	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependency.dstSubpass = 0;
-	dependency.srcStageMask = stageMask;
-	dependency.dstStageMask = stageMask;
-	dependency.srcAccessMask = 0;
-	dependency.dstAccessMask = accessMask;
 
 	//create renderpass
 	VkRenderPassCreateInfo renderPassInfo{};
@@ -143,8 +135,8 @@ VkRenderPass Framebuffer::createRenderPass() {
 	renderPassInfo.pAttachments = attachmentDescriptions.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = 1;
-	renderPassInfo.pDependencies = &dependency;
+	renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+	renderPassInfo.pDependencies = dependencies.data();
 
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	VK_CHECK_RESULT(vkCreateRenderPass(devices->device, &renderPassInfo, nullptr, &renderPass));
