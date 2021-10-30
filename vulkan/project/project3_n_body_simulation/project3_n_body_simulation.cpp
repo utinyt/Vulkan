@@ -153,7 +153,7 @@ public:
 		//load particle texture
 		particleTex.load(&devices, "../../textures/particle.png");
 
-		renderPass = vktools::createRenderPass(devices.device,
+		/*renderPass = vktools::createRenderPass(devices.device,
 			{swapchain.surfaceFormat.format},
 			depthFormat,
 			VK_SAMPLE_COUNT_1_BIT,
@@ -162,14 +162,15 @@ public:
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);*/
 		
 		createHDRBloomResources();
-		createDescriptorSet();
-		createPipeline();
+		createRenderpass();
 		createFramebuffers();
 		createUniformBuffers();
+		createDescriptorSet();
 		updateDescriptorSets();
+		createPipeline();
 		imguiBase->init(&devices, swapchain.extent.width, swapchain.extent.height,
 			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
 		recordCommandBuffer();
@@ -361,9 +362,7 @@ private:
 	* override resize function - update offscreen resources
 	*/
 	void resizeWindow(bool /*recordCommandBuffer*/) override {
-		sampleCount = VK_SAMPLE_COUNT_1_BIT;
 		VulkanAppBase::resizeWindow(false);
-		sampleCount = static_cast<VkSampleCountFlagBits>(devices.maxSampleCount);
 
 		createHDRBloomResources(true);
 		updateDescriptorSets();
@@ -373,6 +372,88 @@ private:
 		recordComputeCommandBuffers();
 
 		recordCommandBuffer();
+	}
+
+	/*
+	* create renderpass for framebuffer (containing swapchain images)
+	*/
+	void createRenderpass() {
+		//attachment 0 : swapchain image
+		VkAttachmentDescription swapchainIamge{};
+		swapchainIamge.format = swapchain.surfaceFormat.format;
+		swapchainIamge.samples = sampleCount;
+		swapchainIamge.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		swapchainIamge.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		swapchainIamge.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		swapchainIamge.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		swapchainIamge.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		swapchainIamge.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		VkAttachmentReference swapchainImageRef{};
+		swapchainImageRef.attachment = 0;
+		swapchainImageRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		//attachment 1 : depth image
+		VkAttachmentDescription depthImage{};
+		depthImage.format = depthFormat;
+		depthImage.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthImage.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthImage.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthImage.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthImage.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		//layout of depth image already translated
+		depthImage.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		depthImage.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference depthImageRef{};
+		depthImageRef.attachment = 1;
+		depthImageRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		//subpass
+		VkSubpassDescription subpassDescription{};
+		subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpassDescription.inputAttachmentCount = 0; //optional
+		subpassDescription.pInputAttachments = nullptr; //optional
+		subpassDescription.colorAttachmentCount = 1;
+		subpassDescription.pColorAttachments = &swapchainImageRef;
+		subpassDescription.pResolveAttachments = nullptr;
+		subpassDescription.pDepthStencilAttachment = &depthImageRef;
+
+		//subpass dependencies
+		std::array<VkSubpassDependency, 2> dependencies{};
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		std::array<VkAttachmentDescription, 2> attachments{ swapchainIamge, depthImage };
+
+		VkRenderPassCreateInfo renderpassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+		renderpassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderpassInfo.pAttachments = attachments.data();
+		renderpassInfo.subpassCount = 1;
+		renderpassInfo.pSubpasses = &subpassDescription;
+		renderpassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		renderpassInfo.pDependencies = dependencies.data();
+		VK_CHECK_RESULT(vkCreateRenderPass(devices.device, &renderpassInfo, nullptr, &renderPass));
+	}
+
+	/*
+	* 
+	*/
+	void transferOwnership() {
+
 	}
 
 	/*
@@ -418,10 +499,10 @@ private:
 		VkSubpassDependency initialDependency{};
 		initialDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 		initialDependency.dstSubpass = 0;
-		initialDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		initialDependency.srcAccessMask = 0;
+		initialDependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		initialDependency.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 		initialDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 		initialDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		std::vector<VkSubpassDependency> dependencies{};
@@ -431,13 +512,13 @@ private:
 		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		dependencies[1].srcSubpass = 0;
 		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -485,7 +566,7 @@ private:
 			glm::vec3(0.f, 0.f, 0.f)
 		};
 
-		const uint32_t particlePerAttractor = 32768;
+		const uint32_t particlePerAttractor = 65536;
 		particleNum = static_cast<uint32_t>(attractors.size()) * particlePerAttractor;
 		ubo.particleNum = particleNum;
 		std::vector<Particle> particles(particleNum);
@@ -799,8 +880,8 @@ private:
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
-			//const size_t resourceIndex = (i / framebuffers.size() + (MAX_FRAMES_IN_FLIGHT - 1)) % MAX_FRAMES_IN_FLIGHT;
-			const size_t resourceIndex = i / framebuffers.size();
+			const size_t resourceIndex = (i / framebuffers.size() + (MAX_FRAMES_IN_FLIGHT - 1)) % MAX_FRAMES_IN_FLIGHT;
+			//const size_t resourceIndex = i / framebuffers.size();
 			/*
 			* hdr pass
 			*/
@@ -818,6 +899,7 @@ private:
 			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
 
+			//TODO: merge this pass to the previous renderpass (subpass)
 			/*
 			* extract bright color
 			*/

@@ -7,6 +7,7 @@
 * @param maxSets - maximum number of descriptor sets allocated from the pool
 * @param flags
 */
+//TODO: take this out of this class since descriptor pool per instance is inefficient
 VkDescriptorPool DescriptorSetBindings::createDescriptorPool(VkDevice device, uint32_t maxSets,
 	VkDescriptorPoolCreateFlags flags) const {
 	std::vector<VkDescriptorPoolSize> poolSizes = getRequiredPoolSizes(maxSets);

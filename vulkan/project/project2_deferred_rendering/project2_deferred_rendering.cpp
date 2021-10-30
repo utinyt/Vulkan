@@ -36,7 +36,7 @@ public:
 			ImGui::NewLine();
 			ImGui::Checkbox("Enable SSAO", &userInput.enableSSAO);
 		}
-		
+
 		//edge detection threshold
 		if (userInput.renderMode == 0 || userInput.renderMode == 4) {
 			ImGui::Text("Edge detection threshold");
@@ -63,6 +63,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
+		MAX_FRAMES_IN_FLIGHT = 2;
 	}
 
 	/*
@@ -138,6 +139,7 @@ public:
 		offscreenFramebuffer.cleanup();
 		vkDestroySampler(devices.device, offscreenSampler, nullptr);
 		vkDestroyRenderPass(devices.device, ssaoRenderPass, nullptr);
+		vkDestroyRenderPass(devices.device, ssaoBlurRenderPass, nullptr);
 		ssaoFramebuffer.cleanup();
 		ssaoBlurFramebuffer.cleanup();
 
@@ -188,7 +190,7 @@ public:
 
 		//render pass
 		renderPass = vktools::createRenderPass(devices.device,
-			{swapchain.surfaceFormat.format},
+			{ swapchain.surfaceFormat.format },
 			depthFormat,
 			VK_SAMPLE_COUNT_1_BIT,
 			1,
@@ -261,7 +263,7 @@ private:
 	/** descriptor sets */
 	std::vector<VkDescriptorSet> descriptorSets;
 	/** clear color */
-	VkClearColorValue clearColor{0.f, 0.2f, 0.f, 1.f};
+	VkClearColorValue clearColor{ 0.f, 0.2f, 0.f, 1.f };
 
 	/** uniform buffer handle */
 	std::vector<VkBuffer> cameraUBO;
@@ -317,7 +319,7 @@ private:
 	/** ssao framebuffer - one channel attachment */
 	Framebuffer ssaoFramebuffer, ssaoBlurFramebuffer;
 	/** ssao render pass */
-	VkRenderPass ssaoRenderPass = VK_NULL_HANDLE;
+	VkRenderPass ssaoRenderPass = VK_NULL_HANDLE, ssaoBlurRenderPass = VK_NULL_HANDLE;
 	/** ssao pipeline - reference gbuffer */
 	VkPipeline ssaoPipeline = VK_NULL_HANDLE, ssaoBlurPipeline = VK_NULL_HANDLE;
 	/** ssao pipeline layout */
@@ -454,9 +456,36 @@ private:
 		ssaoFramebuffer.addAttachment(ssaoBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		ssaoBlurFramebuffer.addAttachment(ssaoBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
+		VkSubpassDependency ssaoStart{};
+		ssaoStart.srcSubpass = VK_SUBPASS_EXTERNAL;
+		ssaoStart.dstSubpass = 0;
+		ssaoStart.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		ssaoStart.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		ssaoStart.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		ssaoStart.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		ssaoStart.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkSubpassDependency ssaoEnd{};
+		ssaoEnd.srcSubpass = 0;
+		ssaoEnd.dstSubpass = VK_SUBPASS_EXTERNAL;
+		ssaoEnd.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		ssaoEnd.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		ssaoEnd.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		ssaoEnd.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		ssaoEnd.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkSubpassDependency ssaoBlurStart{};
+		ssaoBlurStart.srcSubpass = VK_SUBPASS_EXTERNAL;
+		ssaoBlurStart.dstSubpass = 0;
+		ssaoBlurStart.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		ssaoBlurStart.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		ssaoBlurStart.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		ssaoBlurStart.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
 		//render pass
 		if (createFramebufferOnly == false) {
-			ssaoRenderPass = ssaoFramebuffer.createRenderPass();
+			ssaoRenderPass = ssaoFramebuffer.createRenderPass({ssaoStart, ssaoEnd});
+			ssaoBlurRenderPass = ssaoBlurFramebuffer.createRenderPass({ssaoBlurStart, ssaoEnd});
 		}
 		ssaoFramebuffer.createFramebuffer(swapchain.extent, ssaoRenderPass);
 		ssaoBlurFramebuffer.createFramebuffer(swapchain.extent, ssaoRenderPass);
@@ -470,10 +499,10 @@ private:
 		int start = -INSTANCE_NUM_SQRT / 2;
 		for (int col = start; col < -start; ++col) {
 			for (int row = start; row < -start; ++row) {
-				instancedTransformation.push_back({ 
+				instancedTransformation.push_back({
 					glm::vec3(col * 1.5, 0.5f, row * 1.5),
-					glm::vec3(1.f, 1.f, 1.f) 
-				});
+					glm::vec3(1.f, 1.f, 1.f)
+					});
 			}
 		}
 
@@ -538,6 +567,24 @@ private:
 		attachmentInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		offscreenFramebuffer.addAttachment(attachmentInfo, memProperties);
 
+		std::vector<VkSubpassDependency> dependencies{};
+		dependencies.resize(2);
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
 		if (createFramebufferOnly == false) {
 			//sampler
 			VkSamplerCreateInfo samplerInfo =
@@ -545,9 +592,9 @@ private:
 			VK_CHECK_RESULT(vkCreateSampler(devices.device, &samplerInfo, nullptr, &offscreenSampler));
 
 			//render pass
-			offscreenRenderPass = offscreenFramebuffer.createRenderPass();
+			offscreenRenderPass = offscreenFramebuffer.createRenderPass(dependencies);
 		}
-		
+
 		offscreenFramebuffer.createFramebuffer(swapchain.extent, offscreenRenderPass);
 	}
 
@@ -575,7 +622,7 @@ private:
 		clearValues.resize(3);
 		clearValues[0].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
 		clearValues[1].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
-		clearValues[2].depthStencil = {1.f, 0};
+		clearValues[2].depthStencil = { 1.f, 0 };
 		clearValues.shrink_to_fit();
 
 		VkRenderPassBeginInfo offscreenRenderPassBeginInfo{};
@@ -591,7 +638,7 @@ private:
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		allocInfo.commandPool = devices.commandPool;
-		allocInfo.commandBufferCount = 2;
+		allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 		offscreenCmdBuf.resize(MAX_FRAMES_IN_FLIGHT);
 
 		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &allocInfo, offscreenCmdBuf.data()));
@@ -606,7 +653,7 @@ private:
 			vktools::setViewportScissorDynamicStates(offscreenCmdBuf[i], swapchain.extent);
 
 			vkCmdBindPipeline(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
-			vkCmdBindDescriptorSets(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, 
+			vkCmdBindDescriptorSets(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout,
 				0, 1, &offscreenDescriptorSets[i], 0, nullptr);
 
 			VkDeviceSize offsets[] = { 0 };
@@ -646,7 +693,7 @@ private:
 		auto bindingDescription = model.getBindingDescription();
 		auto attributeDescription = model.getAttributeDescriptions();
 		//instanced position descriptions
-		VkVertexInputBindingDescription instancedPosBindingDesc{1, sizeof(Transformation), VK_VERTEX_INPUT_RATE_INSTANCE};
+		VkVertexInputBindingDescription instancedPosBindingDesc{ 1, sizeof(Transformation), VK_VERTEX_INPUT_RATE_INSTANCE };
 		attributeDescription.push_back({ 2, 1, VK_FORMAT_R32G32B32_SFLOAT, 0 });
 		attributeDescription.push_back({ 3, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(glm::vec3) });
 
@@ -700,7 +747,7 @@ private:
 			vktools::createShaderModule(devices.device, vktools::readFile("shaders/ssao_blur_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 		//generate pipeline layout & pipeline
-		gen.generate(ssaoRenderPass, &ssaoBlurPipeline, &ssaoBlurPipelineLayout); //reuse ssaoRenderPass
+		gen.generate(ssaoBlurRenderPass, &ssaoBlurPipeline, &ssaoBlurPipelineLayout); //reuse ssaoRenderPass
 		gen.resetAll();
 
 		/*
@@ -805,7 +852,7 @@ private:
 		renderPassBeginInfo.renderArea.extent = swapchain.extent;
 		renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 		renderPassBeginInfo.pClearValues = clearValues.data();
-		
+
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
 			/*
@@ -829,6 +876,7 @@ private:
 			/*
 			* ssao blur - full screen quad
 			*/
+			renderPassBeginInfo.renderPass = ssaoBlurRenderPass;
 			renderPassBeginInfo.framebuffer = ssaoBlurFramebuffer.framebuffer;
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -860,7 +908,7 @@ private:
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-			
+
 			/*
 			* final - lighting calculation for complex pixels
 			*/
@@ -901,7 +949,7 @@ private:
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &cameraUBOCreateInfo, nullptr, &cameraUBO[i]));
 			cameraUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
-					cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+				cameraUBO[i], VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 			VK_CHECK_RESULT(vkCreateBuffer(devices.device, &deferredUBOCreateInfo, nullptr, &deferredUBO[i]));
 			deferredUBOMemories[i] = devices.memoryAllocator.allocateBufferMemory(
@@ -923,7 +971,7 @@ private:
 
 	/*
 	* update matrices in ubo - rotates 90 degrees per second
-	* 
+	*
 	* @param currentFrame - index of uniform buffer vector
 	*/
 	void updateUniformBuffer(size_t currentFrame) {
@@ -1012,10 +1060,10 @@ private:
 			offscreenFramebuffer.attachments[1].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 		VkDescriptorImageInfo ssaoBlurAttachmentInfo{ offscreenSampler,
 			ssaoBlurFramebuffer.attachments[0].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-		
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			//offscreen rendering
-			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
+			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices) };
 			//full quad rendering
 			VkDescriptorBufferInfo deferredUBObufferInfo{ deferredUBO[i], 0, sizeof(UBODeferredRending) };
 

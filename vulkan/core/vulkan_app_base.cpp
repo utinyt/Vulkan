@@ -398,7 +398,7 @@ void VulkanAppBase::createInstance() {
 	}
 
 	//fps counter
-	const char* lunargMonitor = "VK_LAYER_LUNARG_monitor";
+	/*const char* lunargMonitor = "VK_LAYER_LUNARG_monitor";
 
 	auto layerIt = std::find_if(availableLayers.begin(), availableLayers.end(),
 		[&lunargMonitor](const VkLayerProperties& properties) {
@@ -411,7 +411,7 @@ void VulkanAppBase::createInstance() {
 	else {
 		enabledLayerCount++;
 		enabledLayerNames.push_back(lunargMonitor);
-	}
+	}*/
 
 	instanceInfo.enabledLayerCount = enabledLayerCount;
 	instanceInfo.ppEnabledLayerNames = enabledLayerNames.data();
