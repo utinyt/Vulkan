@@ -63,7 +63,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
-		MAX_FRAMES_IN_FLIGHT = 2;
+		MAX_FRAMES_IN_FLIGHT = 1;
 	}
 
 	/*
@@ -142,11 +142,6 @@ public:
 		vkDestroyRenderPass(devices.device, ssaoBlurRenderPass, nullptr);
 		ssaoFramebuffer.cleanup();
 		ssaoBlurFramebuffer.cleanup();
-
-		//offscreen semaphores
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			vkDestroySemaphore(devices.device, offscreenSemaphores[i], nullptr);
-		}
 	}
 
 	/*
@@ -185,8 +180,6 @@ public:
 
 		//offscreen resources
 		createOffscreenRenderPassFramebuffer();
-		//offscreen semaphore
-		createOffscreenSemaphores();
 
 		//render pass
 		renderPass = vktools::createRenderPass(devices.device,
@@ -214,8 +207,6 @@ public:
 			renderPass, MAX_FRAMES_IN_FLIGHT, VK_SAMPLE_COUNT_1_BIT);
 		//record command buffer
 		recordCommandBuffer();
-		//create & record offscreen command buffer
-		createOffscreenCommandBuffer();
 	}
 
 private:
@@ -296,10 +287,6 @@ private:
 	VkRenderPass offscreenRenderPass = VK_NULL_HANDLE;
 	/** offscreen sampler */
 	VkSampler offscreenSampler = VK_NULL_HANDLE;
-	/** offscreen render semaphores */
-	std::vector<VkSemaphore> offscreenSemaphores;
-	/** offscreen command buffer */
-	std::vector<VkCommandBuffer> offscreenCmdBuf{};
 	/** offscreen pipeline */
 	VkPipeline offscreenPipeline = VK_NULL_HANDLE;
 	/** offscreen pipeline layout */
@@ -348,9 +335,6 @@ private:
 	virtual void draw() override {
 		uint32_t imageIndex = prepareFrame();
 
-		/*
-		* offscreen rendering
-		*/
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -358,17 +342,9 @@ private:
 		submitInfo.pWaitSemaphores = &presentCompleteSemaphores[currentFrame];
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &offscreenCmdBuf[currentFrame];
-		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &offscreenSemaphores[currentFrame];
-		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
-
-		/*
-		* post rendering
-		*/
-		submitInfo.pWaitSemaphores = &offscreenSemaphores[currentFrame];
 		size_t commandBufferIndex = currentFrame * framebuffers.size() + imageIndex;
 		submitInfo.pCommandBuffers = &commandBuffers[commandBufferIndex];
+		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = &renderCompleteSemaphores[currentFrame];
 		VK_CHECK_RESULT(vkQueueSubmit(devices.graphicsQueue, 1, &submitInfo, frameLimitFences[currentFrame]));
 
@@ -395,7 +371,6 @@ private:
 		createOffscreenRenderPassFramebuffer(true); //no need to recreate renderpass
 		updateDescriptorSets();
 		recordCommandBuffer();
-		createOffscreenCommandBuffer();
 	}
 
 	/*
@@ -581,8 +556,8 @@ private:
 		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		if (createFramebufferOnly == false) {
@@ -596,83 +571,6 @@ private:
 		}
 
 		offscreenFramebuffer.createFramebuffer(swapchain.extent, offscreenRenderPass);
-	}
-
-	/*
-	* create offscreen semaphores
-	*/
-	void createOffscreenSemaphores() {
-		offscreenSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-		VkSemaphoreCreateInfo info{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VK_CHECK_RESULT(vkCreateSemaphore(devices.device, &info, nullptr, &offscreenSemaphores[i]));
-		}
-	}
-
-	/*
-	* create & record offscreen command buffer
-	*/
-	void createOffscreenCommandBuffer() {
-		if (!offscreenCmdBuf.empty()) {
-			vkFreeCommandBuffers(devices.device, devices.commandPool,
-				static_cast<uint32_t>(offscreenCmdBuf.size()), offscreenCmdBuf.data());
-		}
-
-		std::vector<VkClearValue> clearValues{};
-		clearValues.resize(3);
-		clearValues[0].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
-		clearValues[1].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
-		clearValues[2].depthStencil = { 1.f, 0 };
-		clearValues.shrink_to_fit();
-
-		VkRenderPassBeginInfo offscreenRenderPassBeginInfo{};
-		offscreenRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		offscreenRenderPassBeginInfo.renderPass = offscreenRenderPass;
-		offscreenRenderPassBeginInfo.renderArea.offset = { 0, 0 };
-		offscreenRenderPassBeginInfo.renderArea.extent = swapchain.extent;
-		offscreenRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-		offscreenRenderPassBeginInfo.pClearValues = clearValues.data();
-		offscreenRenderPassBeginInfo.framebuffer = offscreenFramebuffer.framebuffer;
-
-		VkCommandBufferAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocInfo.commandPool = devices.commandPool;
-		allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-		offscreenCmdBuf.resize(MAX_FRAMES_IN_FLIGHT);
-
-		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &allocInfo, offscreenCmdBuf.data()));
-
-		VkCommandBufferBeginInfo beginInfo{};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			VK_CHECK_RESULT(vkBeginCommandBuffer(offscreenCmdBuf[i], &beginInfo));
-
-			vkCmdBeginRenderPass(offscreenCmdBuf[i], &offscreenRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vktools::setViewportScissorDynamicStates(offscreenCmdBuf[i], swapchain.extent);
-
-			vkCmdBindPipeline(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
-			vkCmdBindDescriptorSets(offscreenCmdBuf[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout,
-				0, 1, &offscreenDescriptorSets[i], 0, nullptr);
-
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 0, 1, &floorBuffer, offsets);
-			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 1, 1, &instancedTransformationBuffer, offsets);
-			VkDeviceSize indexBufferOffset = floor.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(offscreenCmdBuf[i], floorBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(offscreenCmdBuf[i], static_cast<uint32_t>(floor.indices.size()), 1, 0, 0, 0);
-
-			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 0, 1, &modelBuffer, offsets);
-			offsets[0] = sizeof(Transformation);
-			vkCmdBindVertexBuffers(offscreenCmdBuf[i], 1, 1, &instancedTransformationBuffer, offsets);
-			indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(offscreenCmdBuf[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(offscreenCmdBuf[i], static_cast<uint32_t>(model.indices.size()), INSTANCE_NUM_SQRT * INSTANCE_NUM_SQRT, 0, 0, 0);
-
-			vkCmdEndRenderPass(offscreenCmdBuf[i]);
-			VK_CHECK_RESULT(vkEndCommandBuffer(offscreenCmdBuf[i]));
-		}
 	}
 
 	/*
@@ -853,8 +751,53 @@ private:
 		renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 		renderPassBeginInfo.pClearValues = clearValues.data();
 
+		std::vector<VkClearValue> gbufferClearValues{};
+		gbufferClearValues.resize(3);
+		gbufferClearValues[0].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
+		gbufferClearValues[1].color = VkClearColorValue{ 0.f, 0.0f, 0.f, 0.f };
+		gbufferClearValues[2].depthStencil = { 1.f, 0 };
+		gbufferClearValues.shrink_to_fit();
+
+		VkRenderPassBeginInfo gbufferRenderPassBeginInfo{};
+		gbufferRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		gbufferRenderPassBeginInfo.renderPass = offscreenRenderPass;
+		gbufferRenderPassBeginInfo.renderArea.offset = { 0, 0 };
+		gbufferRenderPassBeginInfo.renderArea.extent = swapchain.extent;
+		gbufferRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(gbufferClearValues.size());
+		gbufferRenderPassBeginInfo.pClearValues = gbufferClearValues.data();
+		gbufferRenderPassBeginInfo.framebuffer = offscreenFramebuffer.framebuffer;
+
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
+			size_t descriptorSetIndex = i / framebuffers.size();
+			/*
+			* gbuffer
+			*/
+			vkCmdBeginRenderPass(commandBuffers[i], &gbufferRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
+
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout,
+				0, 1, &offscreenDescriptorSets[descriptorSetIndex], 0, nullptr);
+
+			//floor
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &floorBuffer, offsets);
+			vkCmdBindVertexBuffers(commandBuffers[i], 1, 1, &instancedTransformationBuffer, offsets);
+			VkDeviceSize indexBufferOffset = floor.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], floorBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(floor.indices.size()), 1, 0, 0, 0);
+
+			//model
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &modelBuffer, offsets);
+			offsets[0] = sizeof(Transformation);
+			vkCmdBindVertexBuffers(commandBuffers[i], 1, 1, &instancedTransformationBuffer, offsets);
+			indexBufferOffset = model.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], modelBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model.indices.size()), INSTANCE_NUM_SQRT * INSTANCE_NUM_SQRT, 0, 0, 0);
+
+			vkCmdEndRenderPass(commandBuffers[i]);
+
 			/*
 			* ssao occlusion render - full screem quad
 			*/
@@ -903,7 +846,6 @@ private:
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			size_t descriptorSetIndex = i / framebuffers.size();
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
