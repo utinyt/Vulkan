@@ -14,6 +14,7 @@ layout(std140, binding = 0) buffer Pos{
 layout(binding = 1) uniform UBO {
 	float dt;
 	int particleNum;
+	int play;
 } ubo;
 
 layout(constant_id = 0) const int SHARED_DATA_SIZE = 512;
@@ -25,6 +26,9 @@ layout(constant_id = 3) const float SOFTEN = 0.0075;
 shared vec4 sharedData[SHARED_DATA_SIZE];
 
 void main(){
+	if(ubo.play == 0)
+		return;
+
 	uint index = gl_GlobalInvocationID.x;
 	if(index >= ubo.particleNum){
 		return;

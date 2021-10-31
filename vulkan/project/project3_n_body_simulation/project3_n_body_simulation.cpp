@@ -22,11 +22,26 @@ class Imgui : public ImguiBase {
 public:
 	virtual void newFrame() override {
 		ImGui::NewFrame();
-		ImGui::Begin("Setting");
+		ImGui::Begin("Simulation setting");
 
-		ImGui::Checkbox("HDR", &userInput.enableHDR);
+		ImGui::Text("Simulation - Toggle compute shader execution");
+		if (userInput.play == false) {
+			if (ImGui::Button("Play")) {
+				userInput.play = true;
+			}
+		}
+		else if (userInput.play == true) {
+			if (ImGui::Button("Pause")) {
+				userInput.play = false;
+			}
+		}
+
+		ImGui::NewLine();
+
+		ImGui::Text("HDR setting");
+		ImGui::Checkbox("Enable HDR", &userInput.enableHDR);
 		if(userInput.enableHDR == true)
-			ImGui::Checkbox("Bloom", &userInput.enableBloom);
+			ImGui::Checkbox("Enable Bloom", &userInput.enableBloom);
 
 		ImGui::End();
 		ImGui::Render();
@@ -36,6 +51,7 @@ public:
 	struct UserInput {
 		bool enableHDR= true;
 		bool enableBloom = true;
+		bool play = false;
 	} userInput;
 };
 
@@ -182,6 +198,7 @@ private:
 	struct ComputeUBO {
 		float dt;
 		int particleNum;
+		int play;
 	} ubo;
 
 	/** random float generator */
@@ -604,7 +621,7 @@ private:
 			glm::vec3(0.f, 0.f, 0.f)
 		};
 
-		const uint32_t particlePerAttractor = 65536;
+		const uint32_t particlePerAttractor = 32768;
 		particleNum = static_cast<uint32_t>(attractors.size()) * particlePerAttractor;
 		ubo.particleNum = particleNum;
 		std::vector<Particle> particles(particleNum);
@@ -1247,6 +1264,7 @@ private:
 		hdrUBOMemories[currentFrame].mapData(devices.device, &hdrubo);
 		//compute
 		ubo.dt = dt;
+		ubo.play = static_cast<int>(imgui->userInput.play);
 		computeUBOMemories.mapData(devices.device, &ubo);
 	}
 

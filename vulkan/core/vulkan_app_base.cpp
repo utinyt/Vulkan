@@ -138,7 +138,10 @@ void VulkanAppBase::initVulkan() {
 */
 void VulkanAppBase::updateCamera() {
 	//camera keyboard input
-	const float cameraSpeed = 2.5f * dt; // adjust accordingly
+	float cameraSpeed = 2.5f * dt; // adjust accordingly
+	if(glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+		cameraSpeed = 35.0f * dt;
+
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 		camera.camPos += cameraSpeed * camera.camFront;
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)

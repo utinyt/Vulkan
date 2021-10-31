@@ -14,9 +14,13 @@ layout(std140, binding = 0) buffer Pos{
 layout(binding = 1) uniform UBO {
 	float dt;
 	int particleNum;
+	int play;
 } ubo;
 
 void main(){
+	if(ubo.play == 0)
+		return;
+
 	int index = int(gl_GlobalInvocationID);
 	vec4 position = particles[index].posm;
 	vec4 velocity = particles[index].vel;
