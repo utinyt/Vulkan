@@ -21,6 +21,9 @@ A lot of code were based on these great resources:
 * [LearnOpenGL by Joey de Vries](https://learnopengl.com)
 
 ## Updates
+## N-Body Simulation + HDR & Bloom - (Oct.31.2021)
+![n body simulation](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/n_body_simulation.gif)<br>
+
 ## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
 Youtube link : https://youtu.be/CDU1MrpubUw
