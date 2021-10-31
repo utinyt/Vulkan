@@ -43,11 +43,6 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 	VkImageAspectFlags imageAspect = 0;
 	if (imageCreateInfo.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
 		imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
-
-		/*VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
-		vktools::setImageLayout(cmdBuf, attachment.image, VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, { imageAspect, 0, 1, 0, 1 });
-		devices->endCommandBuffer(cmdBuf);*/
 	}
 	else if (imageCreateInfo.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
 		if (vktools::hasDepthComponent(imageCreateInfo.format)) {
@@ -56,11 +51,6 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 		if (vktools::hasStencilComponent(imageCreateInfo.format)) {
 			imageAspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
 		}
-
-		VkCommandBuffer cmdBuf = devices->beginCommandBuffer();
-		vktools::setImageLayout(cmdBuf, attachment.image, VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, { imageAspect, 0, 1, 0, 1 });
-		devices->endCommandBuffer(cmdBuf);
 	}
 	
 	//create image view
@@ -82,7 +72,6 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 	
 	if (imageAspect & VK_IMAGE_ASPECT_DEPTH_BIT || imageAspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		attachment.description.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 	else {
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

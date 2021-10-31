@@ -47,7 +47,7 @@ public:
 	VulkanApp(int width, int height, const std::string& appName)
 		: VulkanAppBase(width, height, appName) {
 		imguiBase = new Imgui;
-		MAX_FRAMES_IN_FLIGHT = 1;
+		MAX_FRAMES_IN_FLIGHT = 2;
 	}
 
 	/*
@@ -152,17 +152,6 @@ public:
 		createParticles();
 		//load particle texture
 		particleTex.load(&devices, "../../textures/particle.png");
-
-		/*renderPass = vktools::createRenderPass(devices.device,
-			{swapchain.surfaceFormat.format},
-			depthFormat,
-			VK_SAMPLE_COUNT_1_BIT,
-			1,
-			true, true,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);*/
 		
 		createHDRBloomResources();
 		createRenderpass();
@@ -501,8 +490,8 @@ private:
 		initialDependency.dstSubpass = 0;
 		initialDependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 		initialDependency.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		initialDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		initialDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		initialDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		std::vector<VkSubpassDependency> dependencies{};
@@ -511,14 +500,14 @@ private:
 		dependencies[0].dstSubpass = 0;
 		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		dependencies[1].srcSubpass = 0;
 		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -880,8 +869,7 @@ private:
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
-			const size_t resourceIndex = (i / framebuffers.size() + (MAX_FRAMES_IN_FLIGHT - 1)) % MAX_FRAMES_IN_FLIGHT;
-			//const size_t resourceIndex = i / framebuffers.size();
+			const size_t resourceIndex = i / framebuffers.size();
 			/*
 			* hdr pass
 			*/
@@ -1137,8 +1125,8 @@ private:
 	* update descriptor set
 	*/
 	void updateDescriptorSets() {
-		std::vector<VkWriteDescriptorSet> writes;
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			std::vector<VkWriteDescriptorSet> writes;
 			//hdr pass
 			VkDescriptorBufferInfo cameraUBObufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices) };
 			writes.push_back(hdrBindings.makeWrite(hdrDescriptorSets[i], 0, &cameraUBObufferInfo));
@@ -1172,9 +1160,11 @@ private:
 
 			VkDescriptorBufferInfo bloomUBObufferInfo{ hdrUBO[i], 0, sizeof(HDRUBO) };
 			writes.push_back(bindings.makeWrite(descriptorSets[i], 2, &bloomUBObufferInfo));
+			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
 
 		//compute
+		std::vector<VkWriteDescriptorSet> writes;
 		VkDescriptorBufferInfo vertexBufferInfo{ particleBuffer, 0, particleBufferSize };
 		VkDescriptorBufferInfo computeUBOInfo{ computeUBO, 0, sizeof(ComputeUBO)};
 		writes.push_back(computeBindings.makeWrite(computeDescriptorSets, 0, &vertexBufferInfo));
