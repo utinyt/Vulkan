@@ -120,6 +120,7 @@ public:
 		vkDestroyPipelineLayout(devices.device, bloomPipelineLayout, nullptr);
 		vkDestroySampler(devices.device, offscreenSampler, nullptr);
 
+		//framebuffers
 		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			hdrFramebuffers[i].cleanup();
 			brightFramebuffers[i].cleanup();
@@ -127,13 +128,17 @@ public:
 			bloomFramebufferHorzs[i].cleanup();
 		}
 		
-
 		//semaphore
 		for (auto& semaphore : particleComputeCompleteSemaphores) {
 			vkDestroySemaphore(devices.device, semaphore, nullptr);
 		}
 		for (auto& semaphore : renderCompleteComputeSemaphores) {
 			vkDestroySemaphore(devices.device, semaphore, nullptr);
+		}
+
+		//compute command pool
+		if (separateComputeQueue) {
+			vkDestroyCommandPool(devices.device, computeCommandPool, nullptr);
 		}
 	}
 
@@ -143,11 +148,15 @@ public:
 	virtual void initApp() override {
 		VulkanAppBase::initApp();
 
+		//check if compute queue and graphics queue are in different queue family
+		separateComputeQueue = devices.indices.computeFamily.value() != devices.indices.graphicsFamily.value();
+
 		//init cap setting
 		camera.camPos = glm::vec3(0.f, 0.f, 150.f);
 		camera.camFront = glm::normalize(-camera.camPos);
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
+		createComputeCommandPool();
 		//create particle vertex buffer
 		createParticles();
 		//load particle texture
@@ -239,8 +248,12 @@ private:
 	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
 	/** semaphore for synchronizing compute & graphics pipeline */
 	std::vector<VkSemaphore> particleComputeCompleteSemaphores;
+	/** compute command pool */
+	VkCommandPool computeCommandPool = VK_NULL_HANDLE;
 	/** compute command buffers */
 	std::vector<VkCommandBuffer> computeCommandBuffers;
+	/** indicate compute queue and graphics queue family indices are different */
+	bool separateComputeQueue = false;
 
 	/*
 	* hdr & bloom resources
@@ -439,10 +452,46 @@ private:
 	}
 
 	/*
+	* transfer buffer ownership - if compute queue index is differ with graphics queue index
 	* 
+	* @param buffer - buffer handle to transfer ownership
+	* @param bufferSize
+	* @param srcAccessMask - source access mask for srcStageMask
+	* @param dstAccessMask - destination access mask for dstStageMask
+	* @param srcQueueFamilyIndex - source queue family index giving up ownership
+	* @param dstQueueFamilyIndex - destination queue family index acquiring ownership
+	* @param srcStageMask - source stage which finishes using the buffer
+	* @param dstStageMask - destination stage which is ready to use the buffer 
 	*/
-	void transferOwnership() {
+	void cmdTransferBufferOwnership(
+		VkCommandBuffer cmdBuf,
+		VkBuffer buffer,
+		VkDeviceSize bufferSize,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		uint32_t srcQueueFamilyIndex,
+		uint32_t dstQueueFamilyIndex,
+		VkPipelineStageFlags srcStageMask,
+		VkPipelineStageFlags dstStageMask) {
 
+		VkBufferMemoryBarrier bufferMemoryBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+		bufferMemoryBarrier.srcAccessMask = srcAccessMask;
+		bufferMemoryBarrier.dstAccessMask = dstAccessMask;
+		bufferMemoryBarrier.srcQueueFamilyIndex = srcQueueFamilyIndex;
+		bufferMemoryBarrier.dstQueueFamilyIndex = dstQueueFamilyIndex;
+		bufferMemoryBarrier.buffer = buffer;
+		bufferMemoryBarrier.offset = 0;
+		bufferMemoryBarrier.size = bufferSize;
+
+		vkCmdPipelineBarrier(
+			cmdBuf,
+			srcStageMask,
+			dstStageMask,
+			0,
+			0, nullptr,
+			1, &bufferMemoryBarrier,
+			0, nullptr
+		);
 	}
 
 	/*
@@ -589,7 +638,63 @@ private:
 		VkBufferCopy copy{};
 		copy.size = particleBufferSize;
 		vkCmdCopyBuffer(oneTimeCmdBuf, stagingBuffer, particleBuffer, 1, &copy);
+
+		//release buffer ownership to compute queue - cmopute command runs before graphics commands
+		if (separateComputeQueue) {
+			cmdTransferBufferOwnership(oneTimeCmdBuf,
+				particleBuffer, particleBufferSize,
+				VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+				0,
+				devices.indices.graphicsFamily.value(),
+				devices.indices.computeFamily.value(),
+				VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+			);
+		}
+
 		devices.endCommandBuffer(oneTimeCmdBuf);
+
+		if(separateComputeQueue) {
+			//create one time submit compute command buffer
+			VkCommandBuffer oneTimeComputeCmdBuf = VK_NULL_HANDLE;
+			VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+			allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+			allocInfo.commandPool = computeCommandPool;
+			allocInfo.commandBufferCount = 1;
+			VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &allocInfo, &oneTimeComputeCmdBuf));
+			VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			VK_CHECK_RESULT(vkBeginCommandBuffer(oneTimeComputeCmdBuf, &beginInfo));
+
+			cmdTransferBufferOwnership(oneTimeComputeCmdBuf,
+				particleBuffer, particleBufferSize,
+				0,
+				VK_ACCESS_SHADER_WRITE_BIT,
+				devices.indices.graphicsFamily.value(),
+				devices.indices.computeFamily.value(),
+				VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+			);
+
+			cmdTransferBufferOwnership(oneTimeComputeCmdBuf,
+				particleBuffer, particleBufferSize,
+				VK_ACCESS_SHADER_WRITE_BIT,
+				0,
+				devices.indices.computeFamily.value(),
+				devices.indices.graphicsFamily.value(),
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+			);
+
+			//submit one time submit compute command buffer
+			vkEndCommandBuffer(oneTimeComputeCmdBuf);
+			VkSubmitInfo submitInfo{};
+			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+			submitInfo.commandBufferCount = 1;
+			submitInfo.pCommandBuffers = &oneTimeComputeCmdBuf;
+			VK_CHECK_RESULT(vkQueueSubmit(devices.computeQueue, 1, &submitInfo, VK_NULL_HANDLE));
+			VK_CHECK_RESULT(vkQueueWaitIdle(devices.computeQueue));
+			vkFreeCommandBuffers(devices.device, computeCommandPool, 1, &oneTimeComputeCmdBuf);
+		}
 
 		devices.memoryAllocator.freeBufferMemory(stagingBuffer,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
@@ -869,6 +974,20 @@ private:
 		
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &cmdBufBeginInfo));
+
+			//acquire buffer ownership
+			if (separateComputeQueue) {
+				cmdTransferBufferOwnership(commandBuffers[i],
+					particleBuffer, particleBufferSize,
+					0,
+					VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+					devices.indices.computeFamily.value(),
+					devices.indices.graphicsFamily.value(),
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+				);
+			}
+
 			const size_t resourceIndex = i / framebuffers.size();
 			/*
 			* hdr pass
@@ -952,9 +1071,39 @@ private:
 			imguiBase->drawFrame(commandBuffers[i], resourceIndex);
 
 			vkCmdEndRenderPass(commandBuffers[i]);
+
+			//release buffer ownership
+			if (separateComputeQueue) {
+				cmdTransferBufferOwnership(commandBuffers[i],
+					particleBuffer, particleBufferSize,
+					VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+					0,
+					devices.indices.graphicsFamily.value(),
+					devices.indices.computeFamily.value(),
+					VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+				);
+			}
+
 			VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffers[i]));
 		}
 		LOG("built:\t\tcommand buffers");
+	}
+
+	/*
+	* create compute command pool (if compute queue index differs)
+	*/
+	void createComputeCommandPool() {
+		//different queue - create compute command pool
+		if (separateComputeQueue) {
+			VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+			poolInfo.queueFamilyIndex = devices.indices.computeFamily.value();
+			VK_CHECK_RESULT(vkCreateCommandPool(devices.device, &poolInfo, nullptr, &computeCommandPool));
+		}
+		//same queue - just use graphics command pool
+		else {
+			computeCommandPool = devices.commandPool;
+		}
 	}
 
 	/*
@@ -964,7 +1113,7 @@ private:
 		//create command buffers
 		computeCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 		VkCommandBufferAllocateInfo compCmdBufInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-		compCmdBufInfo.commandPool = devices.commandPool;
+		compCmdBufInfo.commandPool = computeCommandPool;
 		compCmdBufInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		compCmdBufInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
 		VK_CHECK_RESULT(vkAllocateCommandBuffers(devices.device, &compCmdBufInfo, computeCommandBuffers.data()));
@@ -989,7 +1138,19 @@ private:
 		VkCommandBufferBeginInfo cmdBufBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			VK_CHECK_RESULT(vkBeginCommandBuffer(computeCommandBuffers[i], &cmdBufBeginInfo));
-			//acquire barrrier...
+
+			//acquire buffer ownership
+			if (separateComputeQueue) {
+				cmdTransferBufferOwnership(computeCommandBuffers[i],
+					particleBuffer, particleBufferSize,
+					0,
+					VK_ACCESS_SHADER_WRITE_BIT,
+					devices.indices.graphicsFamily.value(),
+					devices.indices.computeFamily.value(),
+					VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+				);
+			}
 
 			//first pass - compute particle gravity
 			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineCompute);
@@ -1019,7 +1180,19 @@ private:
 			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineUpdate);
 			vkCmdDispatch(computeCommandBuffers[i], particleNum / localGroupSize, 1, 1);
 
-			//release barrrier ...
+			//release buffer ownership
+			if (separateComputeQueue) {
+				cmdTransferBufferOwnership(computeCommandBuffers[i],
+					particleBuffer, particleBufferSize,
+					VK_ACCESS_SHADER_WRITE_BIT,
+					0,
+					devices.indices.computeFamily.value(),
+					devices.indices.graphicsFamily.value(),
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+				);
+			}
+
 			vkEndCommandBuffer(computeCommandBuffers[i]);
 		}
 	}

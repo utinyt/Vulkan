@@ -221,7 +221,7 @@ VulkanDevice::QueueFamilyIndices VulkanDevice::findQueueFamilyIndices(VkPhysical
 		}
 
 		//compute family
-		if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) /*&& (i != indices.graphicsFamily)*/) {
+		if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
 			indices.computeFamily = i;
 		}
 
