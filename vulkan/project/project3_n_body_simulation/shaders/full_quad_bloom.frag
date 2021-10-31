@@ -6,7 +6,7 @@ layout(location = 0) out vec4 col;
 
 layout(binding = 0) uniform sampler2D brightImage;
 
-layout(constant_id = 0) const int horizontal = 0;
+layout(constant_id = 0) const uint horizontal = 2;
 
 void main(){
 	float weight[5] = float[] (0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
@@ -19,7 +19,7 @@ void main(){
 			result += texture(brightImage, inUV - vec2(texOffset.x  * i, 0.0)).xyz * weight[i];
 		}
 	}
-	else{
+	else if(horizontal == 0){
 		for(int i = 1; i < 5; ++i){
 			result += texture(brightImage, inUV + vec2(0.0, texOffset.y  * i)).xyz * weight[i];
 			result += texture(brightImage, inUV - vec2(0.0, texOffset.y  * i)).xyz * weight[i];

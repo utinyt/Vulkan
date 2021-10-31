@@ -621,7 +621,7 @@ private:
 			glm::vec3(0.f, 0.f, 0.f)
 		};
 
-		const uint32_t particlePerAttractor = 32768;
+		const uint32_t particlePerAttractor = 65536;
 		particleNum = static_cast<uint32_t>(attractors.size()) * particlePerAttractor;
 		ubo.particleNum = particleNum;
 		std::vector<Particle> particles(particleNum);
@@ -817,7 +817,7 @@ private:
 		uint32_t horizontalBlur = 0;
 		VkSpecializationMapEntry specializationMapEntry{ 0, 0, sizeof(uint32_t) };
 		VkSpecializationInfo specializationInfo{ 1, &specializationMapEntry, sizeof(uint32_t), &horizontalBlur };
-		auto stages = gen.getShaderStageCreateInfo();
+		auto& stages = gen.getShaderStageCreateInfo();
 		stages[1].pSpecializationInfo = &specializationInfo;
 
 		//generate pipeline layout & pipeline
