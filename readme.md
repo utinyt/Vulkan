@@ -23,12 +23,13 @@ A lot of code were based on these great resources:
 ## Updates
 ## N-Body Simulation + HDR & Bloom - (Oct.31.2021)
 ![n body simulation](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/n_body_simulation.gif)<br>
-### Average frame time: 5.57ms (179.6 FPS)
+#### Average frame time: 5.57ms (179.6 FPS)
 * 32768 particles
 * Screen resolution 1200x800
 * HDR (reinhard tone mapping)
 * Bloom (gaussian blur)
 * Compute shader + shared variables
+<br>
 
 ## Deferred Rendering + SSAO & MSAA - (Oct.05.2021)
 ![deferred_rendering](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering.png)<br>
