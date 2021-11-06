@@ -54,7 +54,6 @@ To fix thread coherence problem ("edge pixels" and "non-edge pixels" are compute
 ## MSAA - (Sep.16.2021)
 ![mass_x1](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x1.png)<br>
 ![mass_x8](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/msaa_x8.png)<br>
-#### Note: It is not recommended to change sample count dynamically (like above) as it results lots of vulkan resource recreation.
 <br>
 
 ## Skybox & environment (reflection) mapping - (Sep.16.2021)
