@@ -43,10 +43,10 @@ Youtube link : https://youtu.be/CDU1MrpubUw
   
 ### Optimization #1
 ![deferred_rendering edge detection](https://github.com/jooho556/TeamPositive/blob/master/vulkan/screenshots/deferred_rendering_edge_detection.png)<br>
-Used edge detection (comparing neighborhood normal vectors) to only apply msaa to the pixels on edges<br><br>
+Used edge detection (comparing neighborhood normal vectors) to only apply msaa to the pixels on edges<br>
 
 ### Optimization #2
-To fix thread coherence problem ("edge pixels" and "non-edge pixels" are computed in one pass), the render pass for edge pixels was separated by using stencil buffer generated from edge detection algorithm.<br><br>
+To fix thread coherence problem ("edge pixels" and "non-edge pixels" are computed in one pass), the render pass for edge pixels was separated by using stencil buffer generated from edge detection algorithm.<br>
 
 #### Reference : [Antialiased Deferred Rendering by NVIDIA Gameworks](https://docs.nvidia.com/gameworks/content/gameworkslibrary/graphicssamples/d3d_samples/antialiaseddeferredrendering.htm)<br>
 <br>
