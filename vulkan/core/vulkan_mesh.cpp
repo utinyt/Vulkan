@@ -1,4 +1,3 @@
-#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include "vulkan_mesh.h"
 #include "vulkan_device.h"

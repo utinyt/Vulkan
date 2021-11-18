@@ -6,7 +6,7 @@ public:
 	/** @brief destroy image & imageView & sampler */
 	void cleanup();
 	/** @brief load texture from a file */
-	virtual void load(VulkanDevice* devices, const std::string& path) = 0;
+	virtual void load(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode) = 0;
 	/** @brief just get the handle from the user and init texture */
 	void init(VulkanDevice* devices, VkImage image, VkImageView imageView,
 		VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE) {
@@ -28,7 +28,7 @@ public:
 class Texture2D : public TextureBase {
 public:
 	/** @brief load texture from a file and create image & imageView & sampler */
-	virtual void load(VulkanDevice* devices, const std::string& path) override;
+	virtual void load(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode) override;
 	/** @brief load texture from a buffer */
 	void load(VulkanDevice* devices, unsigned char* data,
 		uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format,
@@ -38,5 +38,5 @@ public:
 class TextureCube : public TextureBase {
 public:
 	/** @brief load texture from a file and create image & imageView & sampler */
-	virtual void load(VulkanDevice* devices, const std::string& path) override;
+	virtual void load(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode) override;
 };

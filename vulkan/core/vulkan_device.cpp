@@ -125,6 +125,11 @@ void VulkanDevice::createLogicalDevice() {
 		deviceFeatures.features.sampleRateShading = VK_TRUE;
 	}
 	deviceInfo.pNext = &deviceFeatures;
+	VkPhysicalDeviceVulkan12Features enabledVk12Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+	if (vk12Features.runtimeDescriptorArray == VK_TRUE) {
+		enabledVk12Features.runtimeDescriptorArray = VK_TRUE;
+	}
+	deviceFeatures.pNext = &enabledVk12Features;
 
 	VkMemoryAllocateFlags memflags = 0;
 

@@ -171,7 +171,7 @@ public:
 		skyboxBuffer = skybox.createModelBuffer(&devices);
 
 		//skybox texture load
-		skyboxTexture.load(&devices, "../../textures/skybox");
+		skyboxTexture.load(&devices, "../../textures/skybox", VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
 		//ssao sample kernel uniform & noise images
 		createSSAOResources();

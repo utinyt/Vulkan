@@ -176,7 +176,7 @@ public:
 		//create particle vertex buffer
 		createParticles();
 		//load particle texture
-		particleTex.load(&devices, "../../textures/particle.png");
+		particleTex.load(&devices, "../../textures/particle.png", VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 		
 		createHDRBloomResources();
 		createRenderpass();

@@ -20,6 +20,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "project3_n_body_simulation"
 		{83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD} = {83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "project4_physically_based_rendering", "project\project4_physically_based_rendering\project4_physically_based_rendering.vcxproj", "{F1721097-92EF-4732-AC10-21C32E2CA469}"
+	ProjectSection(ProjectDependencies) = postProject
+		{83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD} = {83C8C429-9DB3-4D21-B3DE-6EEDD8428BBD}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -42,6 +47,10 @@ Global
 		{4E8326BE-E10A-471E-9A45-240AA898F064}.Debug|x64.Build.0 = Debug|x64
 		{4E8326BE-E10A-471E-9A45-240AA898F064}.Release|x64.ActiveCfg = Release|x64
 		{4E8326BE-E10A-471E-9A45-240AA898F064}.Release|x64.Build.0 = Release|x64
+		{F1721097-92EF-4732-AC10-21C32E2CA469}.Debug|x64.ActiveCfg = Debug|x64
+		{F1721097-92EF-4732-AC10-21C32E2CA469}.Debug|x64.Build.0 = Debug|x64
+		{F1721097-92EF-4732-AC10-21C32E2CA469}.Release|x64.ActiveCfg = Release|x64
+		{F1721097-92EF-4732-AC10-21C32E2CA469}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

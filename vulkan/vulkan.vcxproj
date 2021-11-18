@@ -16,8 +16,10 @@
     <ClCompile Include="..\third_party\include\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\third_party\include\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\third_party\include\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="core\tiny_headers.cpp" />
     <ClCompile Include="core\vulkan_descriptor_set_bindings.cpp" />
     <ClCompile Include="core\vulkan_framebuffer.cpp" />
+    <ClCompile Include="core\vulkan_gltf.cpp" />
     <ClCompile Include="core\vulkan_imgui.cpp" />
     <ClCompile Include="core\vulkan_memory_allocator.cpp" />
     <ClCompile Include="core\vulkan_mesh.cpp" />
@@ -38,6 +40,7 @@
     <ClInclude Include="..\third_party\include\imgui\imstb_truetype.h" />
     <ClInclude Include="core\vulkan_descriptor_set_bindings.h" />
     <ClInclude Include="core\vulkan_framebuffer.h" />
+    <ClInclude Include="core\vulkan_gltf.h" />
     <ClInclude Include="core\vulkan_imgui.h" />
     <ClInclude Include="core\vulkan_memory_allocator.h" />
     <ClInclude Include="core\vulkan_mesh.h" />

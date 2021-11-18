@@ -91,6 +91,30 @@ VkWriteDescriptorSet DescriptorSetBindings::makeWrite(VkDescriptorSet dstSet, ui
 }
 
 /*
+* create make write structure - array of VkDescriptorImageInfo
+*
+* @param dstSet - target descriptor set
+* @param dstBinding
+* @param pImageInfo
+*
+* @return VkWriteDescriptorSet
+*
+*/
+VkWriteDescriptorSet DescriptorSetBindings::makeWriteArray(VkDescriptorSet dstSet, uint32_t dstBinding,
+	const VkDescriptorImageInfo* pImageInfo) {
+	VkWriteDescriptorSet writeSet = makeWriteArray(dstSet, dstBinding);
+	if (writeSet.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER &&
+		writeSet.descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
+		writeSet.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE &&
+		writeSet.descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE &&
+		writeSet.descriptorType != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) {
+		throw std::runtime_error("DescriptorSetBindings::makeWrite(): descriptor type doesn't match");
+	}
+	writeSet.pImageInfo = pImageInfo;
+	return writeSet;
+}
+
+/*
 * create make write structure - VkDescriptorBufferInfo
 *
 * @param dstSet - target descriptor set
@@ -166,5 +190,30 @@ VkWriteDescriptorSet DescriptorSetBindings::makeWrite(VkDescriptorSet dstSet, ui
 		}
 	}
 	throw std::runtime_error("DescriptorSetBindings::makeWrite(): cannot find binding");
+	return writeSet;
+}
+
+/*
+* helper function for makeWriteArray***
+*
+* @param dstSet - target descriptor set
+* @param dstBinding
+*
+* @return VkWriteDescriptorSet
+*
+*/
+VkWriteDescriptorSet DescriptorSetBindings::makeWriteArray(VkDescriptorSet dstSet, uint32_t dstBinding) {
+	VkWriteDescriptorSet writeSet{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+	for (size_t i = 0; i < bindings.size(); ++i) {
+		if (bindings[i].binding == dstBinding) {
+			writeSet.descriptorCount = bindings[i].descriptorCount;
+			writeSet.descriptorType = bindings[i].descriptorType;
+			writeSet.dstBinding = dstBinding;
+			writeSet.dstSet = dstSet;
+			writeSet.dstArrayElement = 0;
+			return writeSet;
+		}
+	}
+	throw std::runtime_error("DescriptorSetBindings::makeWriteArray(): cannot find binding");
 	return writeSet;
 }
