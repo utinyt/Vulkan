@@ -1,5 +1,5 @@
 # Vulkan Technical Demo
-This is a realtime 3D rendering application using Vulkan / C++ / GLSL.
+This is a realtime 3D rendering application written in Vulkan / C++ / GLSL.
 
 ## Developing Environments
 * OS: Windows 10
