@@ -25,26 +25,25 @@ float geometrySchlickGGX(float nDotL, float nDotV, float roughness) {
 
 vec3 BRDF(vec3 L, vec3 V, vec3 N, float metallic, float roughness, vec3 albedo, float dist) {
 	vec3 H = normalize(L + V);
-	float nDotH = max(dot(N, H), 0.0);
-	float nDotL = max(dot(N, L), 0.0);
-	float nDotV = max(dot(N, V), 0.0);
-	float hDotV = max(dot(H, V), 0.0);
+	float nDotH = clamp(dot(N, H), 0.0, 1.0);
+	float nDotL = clamp(dot(N, L), 0.0, 1.0);
+	float nDotV = clamp(dot(N, V), 0.0, 1.0);
+	float hDotV = clamp(dot(H, V), 0.0, 1.0);
 	const float PI = 3.141592;
 
 	vec3 Lo = vec3(0.0);
-
-	if(nDotL > 0.0){
+	if(nDotL > 0.0) {
 		float D = distributionGGX(nDotH, roughness);
 		vec3 F = fresnelSchlick(hDotV, albedo, vec3(0.04), metallic);
 		float G = geometrySchlickGGX(nDotL, nDotV, roughness);
 
-		vec3 ks = F;
-		vec3 kd = vec3(1.0) - ks;
-		kd *= 1.0 - metallic;
+//		vec3 ks = F;
+//		vec3 kd = vec3(1.0) - ks;
+//		kd *= 1.0 - metallic;
 
-		vec3 spec = D * G * F / (4.0 * nDotL * nDotV + 0.0001);
+		vec3 spec = D * G * F / (4.0 * nDotL * nDotV);
 		float attenuation = 1.0 / (dist * dist);
-		Lo += (kd * albedo / PI + spec) * attenuation * nDotL;
+		Lo += (albedo / PI + spec) * attenuation * nDotL;
 	}
 
 	return Lo;
