@@ -124,6 +124,8 @@ void VulkanGLTF::loadScene(VulkanDevice* devices, const std::string& path, VkBuf
 		shadeMaterial.baseColorFactor = material.baseColorFactor;
 		shadeMaterial.emissiveFactor = material.emissiveFactor;
 		shadeMaterial.baseColorTextureIndex = material.baseColorTextureIndex;
+		shadeMaterial.roughness = material.roughtness;
+		shadeMaterial.metallic = material.metallic;
 		shadeMaterialsData.push_back(shadeMaterial);
 	}
 	size_t shadeMaterialsSize = shadeMaterialsData.size() * sizeof(ShadeMaterial);
@@ -240,6 +242,8 @@ void VulkanGLTF::loadMaterials(tinygltf::Model& input) {
 		materials[i].alphaCutoff = static_cast<float>(srcMaterial.alphaCutoff);
 		materials[i].doubleSided = srcMaterial.doubleSided;
 		materials[i].emissiveFactor = glm::make_vec3(srcMaterial.emissiveFactor.data());
+		materials[i].roughtness = srcMaterial.pbrMetallicRoughness.roughnessFactor;
+		materials[i].metallic = srcMaterial.pbrMetallicRoughness.metallicFactor;
 	}
 }
 

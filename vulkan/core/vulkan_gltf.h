@@ -52,6 +52,8 @@ public:
 		bool doubleSided = false;
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+		float roughtness = 0;
+		float metallic = 0;
 	};
 	std::vector<Material> materials;
 	/** @brief parse material info from the model */
@@ -113,6 +115,9 @@ public:
 		glm::vec4 baseColorFactor = glm::vec4(1.f);
 		glm::vec3 emissiveFactor = glm::vec4(0.f);
 		int32_t baseColorTextureIndex = -1;
+		float roughness = 0;
+		float metallic = 0;
+		float padding1, padding2;
 	};
 	struct Primitive {
 		uint32_t firstIndex;

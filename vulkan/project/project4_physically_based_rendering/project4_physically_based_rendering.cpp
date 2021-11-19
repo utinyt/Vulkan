@@ -18,6 +18,14 @@ public:
 		ImGui::NewFrame();
 		ImGui::Begin("Setting");
 
+		static glm::vec3 lightPos = { 24.382f, 30.f, 0.1f };
+		ImGui::Text("Light position");
+		ImGui::SliderFloat("X [-30, 30]", &lightPos.x, -30.0f, 30.0f);
+		ImGui::SliderFloat("Y [-30, 30]", &lightPos.y, -30.0f, 30.0f);
+		ImGui::SliderFloat("Z [-30, 30]", &lightPos.z, -30.0f, 30.0f);
+		if (lightPos != userInput.lightPos) {
+			userInput.lightPos = lightPos;
+		}
 
 		ImGui::End();
 		ImGui::Render();
@@ -25,7 +33,7 @@ public:
 
 	/* user input collection */
 	struct UserInput {
-		
+		glm::vec3 lightPos = { 24.382f, 30.f, 0.1f };
 	} userInput;
 
 	
@@ -475,7 +483,7 @@ private:
 				pushConstant.modelMatrix = node.matrix;
 				pushConstant.materialId = primitive.materialIndex;
 				pushConstant.normalMatrix = glm::transpose(glm::inverse(cameraMatrices.view * node.matrix));
-				pushConstant.lightPos = glm::vec3(0, 20, 0);
+				pushConstant.lightPos = static_cast<Imgui*>(imguiBase)->userInput.lightPos;
 				vkCmdPushConstants(commandBuffers[i], gltfPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 					0, sizeof(PushConstant), &pushConstant);
 				vkCmdDrawIndexed(commandBuffers[i], primitive.indexCount, 1, primitive.firstIndex, 0, 0);

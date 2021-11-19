@@ -1,6 +1,8 @@
-#version 450
+#version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "pbr.glsl"
 
 layout(location = 0) in vec3 inNormal;
 layout(location = 1) in vec2 inUV;
@@ -21,6 +23,10 @@ struct ShadeMaterial{
 	vec4 baseColorFactor;
 	vec3 emissiveFactor;
 	int baseColorTextureIndex;
+	float roughness;
+	float metallic;
+	float padding1;
+	float padding2;
 };
 
 layout(set = 0, binding = 3) readonly buffer Materials {
@@ -30,19 +36,21 @@ layout(set = 0, binding = 3) readonly buffer Materials {
 void main(){
 	ShadeMaterial material = materials[materialId];
 
-	//diffuse color
-	vec3 fragToLight = viewLightPos - viewFragPos;
-	fragToLight = normalize(fragToLight);
-	float diff = max(dot(fragToLight, inNormal), 0);
-	col = vec4(vec3(diff) * material.baseColorFactor.xyz, 1.f);
+	vec3 L = normalize(viewLightPos - viewFragPos);
+	vec3 albedo = material.baseColorFactor.xyz;
 	if(material.baseColorTextureIndex > -1){
-		col.xyz *= texture(textures[material.baseColorTextureIndex], inUV).xyz;
+		albedo *= texture(textures[material.baseColorTextureIndex], inUV).xyz;
 	}
+	vec3 V = normalize(-viewFragPos);
+	float dist = length(viewLightPos - viewFragPos);
 
-	//specular
-	vec3 fragToView = normalize(-viewFragPos);
-	vec3 reflectDir = reflect(-fragToLight, inNormal);
-	float spec = 5 * pow(max(dot(fragToView, reflectDir), 0), 64);
+	//rendering equation
+	vec3 Lo = BRDF(L, V, inNormal, material.metallic, material.roughness, albedo, 1);
+	vec3 ambient = albedo * 0.02;
 
-	col.xyz += vec3(spec);
+	vec3 outColor = Lo + ambient; //ambient
+	outColor = outColor / (outColor + vec3(1.0)); //reinhard tonemapping
+	outColor = pow(outColor, vec3(1.0 / 2.2)); //gamma correction
+
+	col = vec4(outColor, 1.0);
 }

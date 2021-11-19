@@ -35,5 +35,8 @@
     <None Include="shaders\skybox.vert">
       <Filter>Source Files\shaders</Filter>
     </None>
+    <None Include="shaders\pbr.glsl">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
