@@ -68,7 +68,7 @@ void VulkanGLTF::loadScene(VulkanDevice* devices, const std::string& path, VkBuf
 	loadImages(model);
 	loadMaterials(model);
 	loadTextures(model);
-
+	
 	//construct a map (mesh index -> primitive indices of that mesh)
 	uint32_t primitiveCount = 0;
 	uint32_t meshCount = 0;

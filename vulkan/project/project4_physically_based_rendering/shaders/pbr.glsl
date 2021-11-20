@@ -37,13 +37,11 @@ vec3 BRDF(vec3 L, vec3 V, vec3 N, float metallic, float roughness, vec3 albedo, 
 		vec3 F = fresnelSchlick(hDotV, albedo, vec3(0.04), metallic);
 		float G = geometrySchlickGGX(nDotL, nDotV, roughness);
 
-//		vec3 ks = F;
-//		vec3 kd = vec3(1.0) - ks;
-//		kd *= 1.0 - metallic;
+		vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
 
 		vec3 spec = D * G * F / (4.0 * nDotL * nDotV);
 		float attenuation = 1.0 / (dist * dist);
-		Lo += (albedo / PI + spec) * attenuation * nDotL;
+		Lo += (kd * albedo / PI + spec) * attenuation * nDotL;
 	}
 
 	return Lo;

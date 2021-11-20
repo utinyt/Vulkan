@@ -36,16 +36,21 @@ layout(set = 0, binding = 3) readonly buffer Materials {
 void main(){
 	ShadeMaterial material = materials[materialId];
 
+	float roughness = max(material.roughness, 0.001);
+
 	vec3 L = normalize(viewLightPos - viewFragPos);
 	vec3 albedo = material.baseColorFactor.xyz;
 	if(material.baseColorTextureIndex > -1){
-		albedo *= texture(textures[material.baseColorTextureIndex], inUV).xyz;
+		if(length(albedo) != 0)
+			albedo *= texture(textures[material.baseColorTextureIndex], inUV).xyz;
+		else
+			albedo = texture(textures[material.baseColorTextureIndex], inUV).xyz;
 	}
 	vec3 V = normalize(-viewFragPos);
 	float dist = length(viewLightPos - viewFragPos);
 
 	//rendering equation
-	vec3 Lo = BRDF(L, V, inNormal, material.metallic, material.roughness, albedo, 1);
+	vec3 Lo = BRDF(L, V, inNormal, material.metallic, roughness, albedo, 1);
 	vec3 ambient = albedo * 0.02;
 
 	vec3 outColor = Lo + ambient; //ambient
