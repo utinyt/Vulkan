@@ -5,18 +5,6 @@
 
 struct VulkanDevice;
 struct Mesh {
-	Mesh(){}
-	Mesh(const std::string& path);
-	/** @brief load obj model from a file */
-	void load(const std::string& path);
-	/** @brief create vertex+index buffer */
-	VkBuffer createModelBuffer(VulkanDevice* devices);
-
-	/** @brief return vertex binding description for current model */
-	VkVertexInputBindingDescription getBindingDescription() const;
-	/** @brief return vertex attribute description for current model */
-	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;
-
 	struct Buffer {
 		Buffer() {};
 		~Buffer() {
@@ -31,6 +19,24 @@ struct Mesh {
 		size_t bufferSize = 0;
 		size_t currentOffset = 0;
 	} vertices;
+
+	Mesh(){}
+	Mesh(const std::string& path);
+	/** @brief load obj model from a file */
+	void load(const std::string& path);
+	/** @brief build model from vertex data */
+	void load(const std::vector<glm::vec3>& position,
+		const std::vector<glm::vec3>& normal,
+		const std::vector<glm::vec2>& uv,
+		const std::vector<uint32_t>& indices,
+		uint32_t vertexCount, bool hasNormal, bool hasUV);
+	/** @brief create vertex+index buffer */
+	VkBuffer createModelBuffer(VulkanDevice* devices);
+
+	/** @brief return vertex binding description for current model */
+	VkVertexInputBindingDescription getBindingDescription() const;
+	/** @brief return vertex attribute description for current model */
+	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;
 
 	/** vector of index - uint32_t by default */
 	std::vector<uint32_t> indices;

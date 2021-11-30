@@ -13,8 +13,10 @@ layout(location = 0) out vec4 col;
 layout(push_constant) uniform RasterPushConstant{
 	mat4 modelMatrix;
 	mat4 normalMatrix;
-	vec3 lightPos;
+	float metallic;
+	float roughness;
 	uint materialId;
+	float padding;
 };
 
 layout(set = 0, binding = 2) uniform sampler2D textures[];

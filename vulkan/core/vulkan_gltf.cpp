@@ -242,8 +242,8 @@ void VulkanGLTF::loadMaterials(tinygltf::Model& input) {
 		materials[i].alphaCutoff = static_cast<float>(srcMaterial.alphaCutoff);
 		materials[i].doubleSided = srcMaterial.doubleSided;
 		materials[i].emissiveFactor = glm::make_vec3(srcMaterial.emissiveFactor.data());
-		materials[i].roughtness = srcMaterial.pbrMetallicRoughness.roughnessFactor;
-		materials[i].metallic = srcMaterial.pbrMetallicRoughness.metallicFactor;
+		materials[i].roughtness = static_cast<float>(srcMaterial.pbrMetallicRoughness.roughnessFactor);
+		materials[i].metallic = static_cast<float>(srcMaterial.pbrMetallicRoughness.metallicFactor);
 	}
 }
 

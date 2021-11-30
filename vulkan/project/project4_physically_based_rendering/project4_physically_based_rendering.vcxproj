@@ -17,8 +17,10 @@
     <None Include="shaders\gltf.frag" />
     <None Include="shaders\gltf.vert" />
     <None Include="shaders\pbr.glsl" />
-    <None Include="shaders\skybox.frag" />
-    <None Include="shaders\skybox.vert" />
+    <None Include="shaders\skydome.frag" />
+    <None Include="shaders\skydome.vert" />
+    <None Include="shaders\sphere.frag" />
+    <None Include="shaders\sphere.vert" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

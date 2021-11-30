@@ -47,6 +47,7 @@ public:
 		glm::mat4 proj;
 		glm::mat4 viewInverse;
 		glm::mat4 projInverse;
+		glm::vec4 camPos;
 	};
 
 	/*
@@ -80,12 +81,12 @@ public:
 		}
 
 		//skybox textures
-		skyboxTexture.cleanup();
+		skydomeTexture.cleanup();
 		
 		//model & skybox buffers
 		gltfModel.cleanup();
-		devices.memoryAllocator.freeBufferMemory(skyboxBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkDestroyBuffer(devices.device, skyboxBuffer, nullptr);
+		devices.memoryAllocator.freeBufferMemory(skydomeBuffer, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkDestroyBuffer(devices.device, skydomeBuffer, nullptr);
 
 		//framebuffers
 		for (auto& framebuffer : framebuffers) {
@@ -98,6 +99,8 @@ public:
 		vkDestroyPipelineLayout(devices.device, pipelineLayout, nullptr);
 		vkDestroyPipeline(devices.device, gltfPipeline, nullptr);
 		vkDestroyPipelineLayout(devices.device, gltfPipelineLayout, nullptr);
+		vkDestroyPipeline(devices.device, spherePipeline, nullptr);
+		vkDestroyPipelineLayout(devices.device, spherePipelineLayout, nullptr);
 		vkDestroyRenderPass(devices.device, renderPass, nullptr);
 	}
 
@@ -113,14 +116,16 @@ public:
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
 		//mesh loading & buffer creation
-		gltfModel.loadScene(&devices, "../../meshes/pica_pica_mini_diorama/scene.gltf", 0);
+		//gltfModel.loadScene(&devices, "../../meshes/pica_pica_mini_diorama/scene.gltf", 0);
 
 		//skybox model loading & buffer creation
-		skybox.load("../../meshes/cube.obj");
-		skyboxBuffer = skybox.createModelBuffer(&devices);
+		//skybox.load("../../meshes/cube.obj");
+		createSphereModel();
+		skydomeBuffer = skydome.createModelBuffer(&devices);
+		
 
 		//skybox texture load
-		skyboxTexture.load(&devices, "../../textures/skybox/MarriottMadisonWest", VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+		skydomeTexture.loadHDR(&devices, "../../textures/Arches_E_PineTree_3k.hdr", VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
 		//render pass
 		createRenderPass();
@@ -145,9 +150,9 @@ private:
 	/** render pass */
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	/** graphics pipeline */
-	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE, gltfPipeline = VK_NULL_HANDLE;
+	VkPipeline pipeline = VK_NULL_HANDLE, skyboxPipeline = VK_NULL_HANDLE, gltfPipeline = VK_NULL_HANDLE, spherePipeline = VK_NULL_HANDLE;
 	/** pipeline layout */
-	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, gltfPipelineLayout = VK_NULL_HANDLE;
+	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, gltfPipelineLayout = VK_NULL_HANDLE, spherePipelineLayout = VK_NULL_HANDLE;
 	/** framebuffers */
 	std::vector<VkFramebuffer> framebuffers;
 	/** descriptor set bindings */
@@ -168,17 +173,19 @@ private:
 	/** gltf mesh */
 	VulkanGLTF gltfModel;
 	/** floor mesh */
-	Mesh skybox;
+	Mesh skydome;
 	/** skybox vertex & index buffer */
-	VkBuffer skyboxBuffer;
-	/** skybox texture */
-	TextureCube skyboxTexture;
+	VkBuffer skydomeBuffer;
+	/** skydome texture */
+	Texture2D skydomeTexture;
 	/** gltf material & transformation info */
 	struct PushConstant {
 		glm::mat4 modelMatrix = glm::mat4(1.f);
 		glm::mat4 normalMatrix = glm::mat4(1.f);
-		glm::vec3 lightPos = glm::vec3(0.f);
+		float metallic = 0.f;
+		float roughness = 1.f;
 		uint32_t materialId = 0;
+		float padding;
 	} pushConstant;
 
 	/*
@@ -212,6 +219,61 @@ private:
 
 		//uniform buffer
 		updateUniformBuffer(currentFrame);
+	}
+
+	/*
+	* create procedural generated sphere
+	*/
+	void createSphereModel() {
+		const unsigned int division = 64;
+		const float PI = 3.141592f;
+		size_t vertexCount = (division + 1) * (division + 1);
+		std::vector<glm::vec3> positions;
+		std::vector<glm::vec3> normals;
+		std::vector<glm::vec2> uvs;
+
+		//vertex data
+		for (unsigned int y = 0; y <= division; ++y) {
+			for (unsigned int x = 0; x <= division; ++x) {
+				float theta = (float)x / (float)division;
+				float phi = (float)y / (float)division;
+				float xPos = std::cos(theta * 2.f * PI) * std::sin(phi * PI);
+				float yPos = std::cos(phi * PI);
+				float zPos = std::sin(theta * 2.f * PI) * std::sin(phi * PI);
+
+				glm::vec3 pos = glm::vec3(xPos, yPos, zPos);
+				glm::vec3 normal = glm::vec3(xPos, yPos, zPos);
+				glm::vec2 uv = glm::vec2(theta, phi);
+				positions.push_back(pos);
+				normals.push_back(normal);
+				uvs.push_back(uv);
+			}
+		}
+
+		//indices
+		std::vector<uint32_t> indices;
+		int topLeft, botLeft;
+		for (int i = 0; i < division; ++i) {
+			topLeft = i * (division + 1);
+			botLeft = topLeft + division + 1;
+
+			for (int j = 0; j < division; ++j) {
+				if (i != 0) {
+					indices.push_back(topLeft);
+					indices.push_back(botLeft);
+					indices.push_back(topLeft + 1);
+				}
+				if (i != (division - 1)) {
+					indices.push_back(topLeft + 1);
+					indices.push_back(botLeft);
+					indices.push_back(botLeft + 1);
+				}
+				topLeft++;
+				botLeft++;
+			}
+		}
+
+		skydome.load(positions, normals, uvs, indices, static_cast<uint32_t>(vertexCount), true, true);
 	}
 
 	/*
@@ -320,72 +382,67 @@ private:
 		/*
 		* gltf pipeline
 		*/
-		PipelineGenerator gen(devices.device);
-		gen.addVertexInputBindingDescription({
-			{0, sizeof(glm::vec3)}, //pos
-			{1, sizeof(glm::vec3)}, //normal
-			{2, sizeof(glm::vec2)} //texcoord0
-		});
-		gen.addVertexInputAttributeDescription({
-			{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, //pos
-			{1, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}, //normal
-			{2, 2, VK_FORMAT_R32G32_SFLOAT, 0} //texcoord0
-		});
-		gen.addDescriptorSetLayout({ descriptorSetLayout });
-		gen.addPushConstantRange({
-			{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant)}
-		});
-		gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/gltf_vert.spv")),
-			VK_SHADER_STAGE_VERTEX_BIT);
-		gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/gltf_frag.spv")),
-			VK_SHADER_STAGE_FRAGMENT_BIT);
-		gen.generate(renderPass, &gltfPipeline, &gltfPipelineLayout);
-		gen.resetAll();
-		/*
-		* pipeline for main model
-		*/
-		//auto bindingDescription = floor.getBindingDescription();
-		//auto attributeDescription = model.getAttributeDescriptions();
-
 		//PipelineGenerator gen(devices.device);
-		//gen.setColorBlendInfo(VK_FALSE);
-		//gen.setMultisampleInfo(sampleCount);
-		//gen.addVertexInputBindingDescription({ bindingDescription });
-		//gen.addVertexInputAttributeDescription(attributeDescription);
+		//gen.addVertexInputBindingDescription({
+		//	{0, sizeof(glm::vec3)}, //pos
+		//	{1, sizeof(glm::vec3)}, //normal
+		//	{2, sizeof(glm::vec2)} //texcoord0
+		//});
+		//gen.addVertexInputAttributeDescription({
+		//	{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, //pos
+		//	{1, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}, //normal
+		//	{2, 2, VK_FORMAT_R32G32_SFLOAT, 0} //texcoord0
+		//});
 		//gen.addDescriptorSetLayout({ descriptorSetLayout });
-		//gen.addShader(
-		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_vert.spv")),
+		//gen.addPushConstantRange({
+		//	{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant)}
+		//});
+		//gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/gltf_vert.spv")),
 		//	VK_SHADER_STAGE_VERTEX_BIT);
-		//gen.addShader(
-		//	vktools::createShaderModule(devices.device, vktools::readFile("shaders/reflection_frag.spv")),
+		//gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/gltf_frag.spv")),
 		//	VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		////generate pipeline layout & pipeline
-		//gen.generate(renderPass, &pipeline, &pipelineLayout);
-		////reset shader & vertex description settings to reuse pipeline generator
-		//gen.resetShaderVertexDescriptions();
-
+		//gen.generate(renderPass, &gltfPipeline, &gltfPipelineLayout);
+		//gen.resetAll();
 
 		/*
 		* pipeline for skybox
 		*/
-		auto bindingDescription = skybox.getBindingDescription();
-		auto attributeDescription = skybox.getAttributeDescriptions();
+		auto bindingDescription = skydome.getBindingDescription();
+		auto attributeDescription = skydome.getAttributeDescriptions();
 
+		PipelineGenerator gen(devices.device);
 		gen.setDepthStencilInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT);
 		gen.addDescriptorSetLayout({ descriptorSetLayout });
 		gen.addVertexInputBindingDescription({ bindingDescription });
 		gen.addVertexInputAttributeDescription(attributeDescription);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_vert.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skydome_vert.spv")),
 			VK_SHADER_STAGE_VERTEX_BIT);
 		gen.addShader(
-			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skybox_frag.spv")),
+			vktools::createShaderModule(devices.device, vktools::readFile("shaders/skydome_frag.spv")),
 			VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		//generate skybox pipeline
 		gen.generate(renderPass, &skyboxPipeline, &pipelineLayout);
+		gen.resetAll();
+
+		/*
+		* spheres
+		*/
+		gen.setRasterizerInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT);
+		gen.addVertexInputBindingDescription({ bindingDescription });
+		gen.addVertexInputAttributeDescription(attributeDescription);
+		gen.addDescriptorSetLayout({ descriptorSetLayout });
+		gen.addPushConstantRange({
+			{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant)}
+			});
+		gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/sphere_vert.spv")),
+			VK_SHADER_STAGE_VERTEX_BIT);
+		gen.addShader(vktools::createShaderModule(devices.device, vktools::readFile("shaders/sphere_frag.spv")),
+			VK_SHADER_STAGE_FRAGMENT_BIT);
+		gen.generate(renderPass, &spherePipeline, &spherePipelineLayout);
+		gen.resetAll();
 
 		LOG("created:\tgraphics pipelines");
 	}
@@ -462,33 +519,57 @@ private:
 
 			//dynamic states
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
-
+			size_t descriptorSetIndex = i / framebuffers.size();
 			/*
 			* draw model 
 			*/
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipeline);
-			size_t descriptorSetIndex = i / framebuffers.size();
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipelineLayout, 0, 1,
-				&descriptorSets[descriptorSetIndex], 0, nullptr);
-
-			//binding vertex & index buffers
-			VkDeviceSize offsets[] = { 0, 0, 0 };
-			VkBuffer vertexBuffers[] = { gltfModel.vertexBuffer, gltfModel.normalBuffer, gltfModel.uvBuffer };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 3, vertexBuffers, offsets);
-			vkCmdBindIndexBuffer(commandBuffers[i], gltfModel.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			//draw all node
-			for (VulkanGLTF::Node& node : gltfModel.nodes) {
-				VulkanGLTF::Primitive& primitive = gltfModel.primitives[node.primitiveIndex];
-				pushConstant.modelMatrix = node.matrix;
-				pushConstant.materialId = primitive.materialIndex;
-				pushConstant.normalMatrix = glm::transpose(glm::inverse(cameraMatrices.view * node.matrix));
-				pushConstant.lightPos = static_cast<Imgui*>(imguiBase)->userInput.lightPos;
-				vkCmdPushConstants(commandBuffers[i], gltfPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-					0, sizeof(PushConstant), &pushConstant);
-				vkCmdDrawIndexed(commandBuffers[i], primitive.indexCount, 1, primitive.firstIndex, 0, 0);
-			}
+			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipeline);
 			
+			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipelineLayout, 0, 1,
+			//	&descriptorSets[descriptorSetIndex], 0, nullptr);
+
+			////binding vertex & index buffers
+			VkDeviceSize offsets[] = { 0, 0, 0 };
+			//VkBuffer vertexBuffers[] = { gltfModel.vertexBuffer, gltfModel.normalBuffer, gltfModel.uvBuffer };
+			//vkCmdBindVertexBuffers(commandBuffers[i], 0, 3, vertexBuffers, offsets);
+			//vkCmdBindIndexBuffer(commandBuffers[i], gltfModel.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+			////draw all node
+			//for (VulkanGLTF::Node& node : gltfModel.nodes) {
+			//	VulkanGLTF::Primitive& primitive = gltfModel.primitives[node.primitiveIndex];
+			//	pushConstant.modelMatrix = node.matrix;
+			//	pushConstant.materialId = primitive.materialIndex;
+			//	pushConstant.normalMatrix = glm::transpose(glm::inverse(cameraMatrices.view * node.matrix));
+			//	pushConstant.lightPos = static_cast<Imgui*>(imguiBase)->userInput.lightPos;
+			//	vkCmdPushConstants(commandBuffers[i], gltfPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+			//		0, sizeof(PushConstant), &pushConstant);
+			//	vkCmdDrawIndexed(commandBuffers[i], primitive.indexCount, 1, primitive.firstIndex, 0, 0);
+			//}
+			
+			/*
+			* draw spheres
+			*/
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, spherePipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, spherePipelineLayout, 0, 1,
+				&descriptorSets[descriptorSetIndex], 0, nullptr);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skydomeBuffer, offsets);
+			size_t indexBufferOffset = skydome.vertices.bufferSize; // sizeof vertex buffer
+			vkCmdBindIndexBuffer(commandBuffers[i], skydomeBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+
+			const int nbSphereSquared = 8;
+			for (int y = 0; y < nbSphereSquared; ++y) {
+				for (int x = 0; x < nbSphereSquared; ++x) {
+					glm::mat4 model = glm::translate(glm::mat4(1.f), glm::vec3((x - (nbSphereSquared / 2)) * 3, y * 3, 0));
+					pushConstant.modelMatrix = model;
+					pushConstant.normalMatrix = glm::inverse(glm::transpose(cameraMatrices.view * model));
+					pushConstant.metallic = y / (float)nbSphereSquared;
+					pushConstant.roughness = x / (float)nbSphereSquared;
+					vkCmdPushConstants(commandBuffers[i], spherePipelineLayout,
+						VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &pushConstant);
+					vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skydome.indices.size()), 1, 0, 0, 0);
+				}
+			}
+
 			/*
 			* draw skybox
 			*/
@@ -496,10 +577,10 @@ private:
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
 				&descriptorSets[descriptorSetIndex], 0, nullptr);
 
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skyboxBuffer, offsets);
-			uint32_t indexBufferOffset = skybox.vertices.bufferSize; // sizeof vertex buffer
-			vkCmdBindIndexBuffer(commandBuffers[i], skyboxBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skydomeBuffer, offsets);
+			
+			vkCmdBindIndexBuffer(commandBuffers[i], skydomeBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skydome.indices.size()), 1, 0, 0, 0);
 			
 			/*
 			* imgui
@@ -542,6 +623,7 @@ private:
 		ubo.proj = cameraMatrices.proj;
 		ubo.viewInverse = glm::inverse(cameraMatrices.view);
 		ubo.projInverse = glm::inverse(cameraMatrices.proj);
+		ubo.camPos = glm::vec4(camera.camPos, 1.f);
 
 		cameraUBOMemories[currentFrame].mapData(devices.device, &ubo);
 	}
@@ -555,10 +637,10 @@ private:
 		//descriptor - 1 image sampler (skybox)
 		bindings.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		//descriptor - n image sampler (gltf textures)
-		bindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			static_cast<uint32_t>(gltfModel.images.size()), VK_SHADER_STAGE_FRAGMENT_BIT);
-		//descriptor - 1 storage buffer (gltf materials)
-		bindings.addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		//bindings.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		//	static_cast<uint32_t>(gltfModel.images.size()), VK_SHADER_STAGE_FRAGMENT_BIT);
+		////descriptor - 1 storage buffer (gltf materials)
+		//bindings.addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		descriptorPool = bindings.createDescriptorPool(devices.device, MAX_FRAMES_IN_FLIGHT);
 		descriptorSetLayout = bindings.createDescriptorSetLayout(devices.device);
@@ -582,9 +664,9 @@ private:
 			VkDescriptorBufferInfo bufferInfo{ cameraUBO[i], 0, sizeof(CameraMatrices)};
 			std::vector<VkWriteDescriptorSet> writes = {
 				bindings.makeWrite(descriptorSets[i], 0, &bufferInfo),
-				bindings.makeWrite(descriptorSets[i], 1, &skyboxTexture.descriptor),
-				bindings.makeWriteArray(descriptorSets[i], 2, imageInfos.data()),
-				bindings.makeWrite(descriptorSets[i], 3, &materialBufferInfo)
+				bindings.makeWrite(descriptorSets[i], 1, &skydomeTexture.descriptor),
+				/*bindings.makeWriteArray(descriptorSets[i], 2, imageInfos.data()),
+				bindings.makeWrite(descriptorSets[i], 3, &materialBufferInfo)*/
 			};
 			vkUpdateDescriptorSets(devices.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}

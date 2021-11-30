@@ -39,6 +39,28 @@ void Texture2D::load(VulkanDevice* devices, const std::string& path, VkSamplerAd
 }
 
 /*
+* load (HDR) texture from a file and create image & imageView & sampler 
+* 
+* @param devices - abstracted vulkan device handle
+* @param path - texture file path
+*/
+void Texture2D::loadHDR(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode) {
+	this->devices = devices;
+
+	//image load
+	int width, height, channels;
+	float* pixels = stbi_loadf(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+	VkDeviceSize imageSize = width * height * 4 * sizeof(float);
+
+	if (!pixels) {
+		throw std::runtime_error("failed to load texture: " + path);
+	}
+
+	load(devices, pixels, width, height, imageSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_FILTER_LINEAR, mode);
+	stbi_image_free(pixels);
+}
+
+/*
 * load 2d texture from a file
 *
 * @param devices - abstracted vulkan device handle
@@ -48,7 +70,7 @@ void Texture2D::load(VulkanDevice* devices, const std::string& path, VkSamplerAd
 * @param imageSize - image size in bytes
 * @param format - image format
 */
-void Texture2D::load(VulkanDevice* devices, unsigned char* data,
+void Texture2D::load(VulkanDevice* devices, void* data,
 	uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format,
 	VkFilter filter, VkSamplerAddressMode mode) {
 	//image creation

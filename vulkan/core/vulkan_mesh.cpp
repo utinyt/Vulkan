@@ -82,6 +82,45 @@ void Mesh::load(const std::string& path) {
 }
 
 /*
+* build model from vertex data 
+* 
+* @param vertices - hold all vertex data
+* @param indices
+* @param vertexCount
+* @param hasNormal - indicate whether normal info is included in 'vertices'
+* @param hasUV - indicate whether uv info is included in 'vertices'
+*/
+void Mesh::load(const std::vector<glm::vec3>& position,
+	const std::vector<glm::vec3>& normal,
+	const std::vector<glm::vec2>& uv,
+	const std::vector<uint32_t>& indices,
+	uint32_t vertexCount,
+	bool hasNormal,
+	bool hasUV) {
+	this->vertices.cleanup();
+	this->indices.clear();
+	this->indices = indices;
+	this->vertexCount = vertexCount;
+	this->hasNormalAttribute = hasNormal;
+	this->hasTexcoordAttribute = hasUV;
+	vertexSize = sizeof(glm::vec3);
+	if (hasNormalAttribute) {
+		vertexSize += sizeof(glm::vec3);
+	}
+	if (hasTexcoordAttribute) {
+		vertexSize += sizeof(glm::vec2);
+	}
+
+	vertices.allocate(vertexCount * vertexSize);
+	for (size_t i = 0; i < position.size(); ++i) {
+		vertices.push(&position[i], sizeof(glm::vec3));
+		vertices.push(&normal[i], sizeof(glm::vec3));
+		vertices.push(&uv[i], sizeof(glm::vec2));
+	}
+	this->indices.shrink_to_fit();
+}
+
+/*
 * create vertex+index buffer 
 * 
 * @return VkBuffer - created buffer

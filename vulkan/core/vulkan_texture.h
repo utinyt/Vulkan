@@ -29,10 +29,13 @@ class Texture2D : public TextureBase {
 public:
 	/** @brief load texture from a file and create image & imageView & sampler */
 	virtual void load(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode) override;
+	/** @brief load (HDR) texture from a file and create image & imageView & sampler */
+	void loadHDR(VulkanDevice* devices, const std::string& path, VkSamplerAddressMode mode);
 	/** @brief load texture from a buffer */
-	void load(VulkanDevice* devices, unsigned char* data,
+	void load(VulkanDevice* devices, void* data,
 		uint32_t texWidth, uint32_t texHeight, VkDeviceSize imageSize, VkFormat format,
 		VkFilter filter = VK_FILTER_LINEAR, VkSamplerAddressMode mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+
 };
 
 class TextureCube : public TextureBase {

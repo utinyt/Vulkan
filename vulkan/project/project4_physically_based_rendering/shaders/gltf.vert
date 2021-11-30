@@ -19,8 +19,10 @@ layout(location = 3) out vec3 viewLightPos;
 layout(push_constant) uniform RasterPushConstant{
 	mat4 modelMatrix;
 	mat4 normalMatrix;
-	vec3 lightPos;
+	float metallic;
+	float roughness;
 	uint materialId;
+	float padding;
 };
 
 void main(){
@@ -28,6 +30,6 @@ void main(){
 	viewFragPos = (modelView * vec4(inPos, 1.f)).xyz;
 	gl_Position = cam.proj * vec4(viewFragPos , 1.f);
 	outNormal = normalize(mat3(transpose(inverse(modelView))) * inNormal);
-	viewLightPos = (cam.view * vec4(lightPos, 1.f)).xyz;
+	//viewLightPos = (cam.view * vec4(lightPos, 1.f)).xyz;
 	outUV = inUV;
 }
