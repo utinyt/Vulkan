@@ -17,7 +17,6 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV;
 layout(location = 3) out vec3 camPos;
 
-
 layout(push_constant) uniform RasterPushConstant{
 	mat4 modelMatrix;
 	mat4 normalMatrix;

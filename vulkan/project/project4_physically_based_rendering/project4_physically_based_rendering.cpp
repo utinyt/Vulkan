@@ -520,31 +520,8 @@ private:
 			//dynamic states
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
 			size_t descriptorSetIndex = i / framebuffers.size();
-			/*
-			* draw model 
-			*/
-			//vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipeline);
-			
-			//vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gltfPipelineLayout, 0, 1,
-			//	&descriptorSets[descriptorSetIndex], 0, nullptr);
 
-			////binding vertex & index buffers
 			VkDeviceSize offsets[] = { 0, 0, 0 };
-			//VkBuffer vertexBuffers[] = { gltfModel.vertexBuffer, gltfModel.normalBuffer, gltfModel.uvBuffer };
-			//vkCmdBindVertexBuffers(commandBuffers[i], 0, 3, vertexBuffers, offsets);
-			//vkCmdBindIndexBuffer(commandBuffers[i], gltfModel.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			////draw all node
-			//for (VulkanGLTF::Node& node : gltfModel.nodes) {
-			//	VulkanGLTF::Primitive& primitive = gltfModel.primitives[node.primitiveIndex];
-			//	pushConstant.modelMatrix = node.matrix;
-			//	pushConstant.materialId = primitive.materialIndex;
-			//	pushConstant.normalMatrix = glm::transpose(glm::inverse(cameraMatrices.view * node.matrix));
-			//	pushConstant.lightPos = static_cast<Imgui*>(imguiBase)->userInput.lightPos;
-			//	vkCmdPushConstants(commandBuffers[i], gltfPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-			//		0, sizeof(PushConstant), &pushConstant);
-			//	vkCmdDrawIndexed(commandBuffers[i], primitive.indexCount, 1, primitive.firstIndex, 0, 0);
-			//}
 			
 			/*
 			* draw spheres
