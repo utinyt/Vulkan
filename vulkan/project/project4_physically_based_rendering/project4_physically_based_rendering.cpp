@@ -111,18 +111,12 @@ public:
 		VulkanAppBase::initApp();
 
 		//init cam setting
-		camera.camPos = glm::vec3(1.f, 1.f, 2.f);
+		camera.camPos = glm::vec3(1.f, 10.f, 35.f);
 		camera.camFront = -camera.camPos;
 		camera.camUp = glm::vec3(0.f, 1.f, 0.f);
 
-		//mesh loading & buffer creation
-		//gltfModel.loadScene(&devices, "../../meshes/pica_pica_mini_diorama/scene.gltf", 0);
-
-		//skybox model loading & buffer creation
-		//skybox.load("../../meshes/cube.obj");
 		createSphereModel();
-		skydomeBuffer = skydome.createModelBuffer(&devices);
-		
+		skydomeBuffer = skydome.createModelBuffer(&devices);		
 
 		//skybox texture load
 		skydomeTexture.loadHDR(&devices, "../../textures/Arches_E_PineTree_3k.hdr", VK_SAMPLER_ADDRESS_MODE_REPEAT);
