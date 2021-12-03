@@ -24,6 +24,7 @@ layout(push_constant) uniform RasterPushConstant{
 	float roughness;
 	uint materialId;
 	float padding;
+	vec3 lightPos;
 };
 
 void main(){

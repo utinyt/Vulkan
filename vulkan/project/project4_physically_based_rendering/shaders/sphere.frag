@@ -18,6 +18,7 @@ layout(push_constant) uniform RasterPushConstant{
 	float roughness;
 	uint materialId;
 	float padding;
+	vec3 lightPos;
 };
 
 vec2 convertVectorToUV(vec3 r){
@@ -51,7 +52,6 @@ void main(){
 	envCol = envCol  / (envCol + vec3(1.f));
 	envCol  = pow(envCol, vec3(1.0 / 2.2));
 
-	vec3 lightPos = vec3(-10, 20, 10);
 	vec3 L = normalize(lightPos - inPos);
 	vec3 albedo = vec3(1, 0, 0);
 	

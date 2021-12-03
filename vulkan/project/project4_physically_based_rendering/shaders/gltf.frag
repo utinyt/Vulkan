@@ -17,6 +17,7 @@ layout(push_constant) uniform RasterPushConstant{
 	float roughness;
 	uint materialId;
 	float padding;
+	vec3 lightPos;
 };
 
 layout(set = 0, binding = 2) uniform sampler2D textures[];

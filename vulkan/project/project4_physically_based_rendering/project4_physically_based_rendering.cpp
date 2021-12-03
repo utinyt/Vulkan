@@ -180,6 +180,7 @@ private:
 		float roughness = 1.f;
 		uint32_t materialId = 0;
 		float padding;
+		glm::vec3 lightPos;
 	} pushConstant;
 
 	/*
@@ -504,6 +505,8 @@ private:
 		renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 		renderPassBeginInfo.pClearValues = clearValues.data();
 		
+		Imgui* imgui = static_cast<Imgui*>(imguiBase);
+
 		for (size_t i = 0; i < framebuffers.size() * MAX_FRAMES_IN_FLIGHT; ++i) {
 			size_t framebufferIndex = i % framebuffers.size();
 			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
@@ -535,6 +538,7 @@ private:
 					pushConstant.normalMatrix = glm::inverse(glm::transpose(cameraMatrices.view * model));
 					pushConstant.metallic = y / (float)nbSphereSquared;
 					pushConstant.roughness = x / (float)nbSphereSquared;
+					pushConstant.lightPos = imgui->userInput.lightPos;
 					vkCmdPushConstants(commandBuffers[i], spherePipelineLayout,
 						VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &pushConstant);
 					vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(skydome.indices.size()), 1, 0, 0, 0);
