@@ -111,6 +111,43 @@ namespace vktools {
 	}
 
 	/*
+	* set pipeline barrier for image layout transition
+	* record command to the command buffer
+	*
+	* @param commandBuffer - command buffer to record
+	* @param image - image to transit layout
+	* @param srcAccessMask
+	* @param dstAccessMask
+	* @param oldLayout
+	* @param newLayout
+	* @param srcStage
+	* @param dstStage
+	* @param subresourceRange
+	*/
+	void insertImageMemoryBarrier(VkCommandBuffer cmdBuf,
+		VkImage image,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout,
+		VkPipelineStageFlags srcStage,
+		VkPipelineStageFlags dstStage,
+		VkImageSubresourceRange subresourceRange) {
+		VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+		barrier.srcAccessMask = srcAccessMask;
+		barrier.dstAccessMask = dstAccessMask;
+		barrier.oldLayout = oldLayout;
+		barrier.newLayout = newLayout;
+		barrier.image = image;
+		barrier.subresourceRange = subresourceRange;
+
+		vkCmdPipelineBarrier(cmdBuf, srcStage, dstStage, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+	}
+
+	/*
 	* create & return image view
 	* 
 	* @param image - image handle

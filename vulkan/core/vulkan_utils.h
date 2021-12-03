@@ -47,6 +47,16 @@ namespace vktools {
 	void setImageLayout(VkCommandBuffer commandBuffer, VkImage image,
 		VkImageLayout oldLayout, VkImageLayout newLayout,
 		VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
+	/** @brief insert image memory barrier (general version of setImageLayout) */
+	void insertImageMemoryBarrier(VkCommandBuffer cmdBuf,
+		VkImage image,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout,
+		VkPipelineStageFlags srcStage,
+		VkPipelineStageFlags dstStage,
+		VkImageSubresourceRange subresourceRange);
 	/** @brief create & return image view */
 	VkImageView createImageView(VkDevice device, VkImage image, VkImageViewType viewType,
 		VkFormat format, VkImageAspectFlags aspectFlags);

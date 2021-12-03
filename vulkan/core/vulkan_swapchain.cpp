@@ -176,6 +176,8 @@ VkResult VulkanSwapchain::acquireImage(VkSemaphore presentCompleteSamaphore, uin
 * @return VkResult from queue present
 */
 VkResult VulkanSwapchain::queuePresent(uint32_t imageIndex, VkSemaphore renderCompleteSemaphore) {
+	latestImageIndex = imageIndex;
+
 	VkPresentInfoKHR presentInfo{};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.waitSemaphoreCount = 1;

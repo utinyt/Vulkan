@@ -35,8 +35,13 @@ protected:
 	void createMultisampleColorBuffer(VkSampleCountFlagBits sampleCount);
 	void destroyMultisampleColorBuffer();
 
+	/** @brief copy & save image from last swapchain image */
+	void saveScreenshot(const std::string& filename);
+
 	/** glfw window handle */
 	GLFWwindow* window;
+	/** window close */
+	bool terminate = false;
 	/** window extent */
 	int width, height;
 	/** glfw mouse pos */

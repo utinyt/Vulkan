@@ -6,6 +6,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "vulkan_app_base.h"
 #include "vulkan_debug.h"
+#include "stb_image_write.h"
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
@@ -79,7 +80,7 @@ void VulkanAppBase::init() {
 * called every frame - contain update & draw functions
 */
 void VulkanAppBase::run() {
-	while (!glfwWindowShouldClose(window)) {
+	while (!glfwWindowShouldClose(window) && !terminate) {
 		glfwPollEvents();
 		update();
 		draw();
@@ -205,6 +206,11 @@ void VulkanAppBase::initApp() {
 * called every frame - update application
 */
 void VulkanAppBase::update() {
+	//escape
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+		terminate = true;
+	}
+
 	//update dt
 	static auto startTime = std::chrono::high_resolution_clock::now();
 	auto currentTime = std::chrono::high_resolution_clock::now();
@@ -227,6 +233,17 @@ void VulkanAppBase::update() {
 	if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_RELEASE && oldState == GLFW_PRESS) {
 		oldState = GLFW_RELEASE;
 	}
+
+	//screenshot
+	static int oldPrintKeyState = GLFW_RELEASE;
+	if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && oldPrintKeyState == GLFW_RELEASE) {
+		oldPrintKeyState = GLFW_PRESS;
+		saveScreenshot("screenshot.png");
+	}
+	if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_RELEASE && oldPrintKeyState == GLFW_PRESS) {
+		oldPrintKeyState = GLFW_RELEASE;
+	}
+
 	if (captureMouse == true) {
 		updateCamera();
 	}
@@ -599,4 +616,193 @@ void VulkanAppBase::destroyMultisampleColorBuffer() {
 
 	multisampleColorImageView = VK_NULL_HANDLE;
 	multisampleColorImage = VK_NULL_HANDLE;
+}
+
+/*
+* copy & save image from last swapchain image
+*
+* @param filename
+*/
+void VulkanAppBase::saveScreenshot(const std::string& filename) {
+	bool blitSupport = true;
+	//check if the device supports blitting from optimal images
+	VkFormatProperties formatProperties;
+	vkGetPhysicalDeviceFormatProperties(devices.physicalDevice, swapchain.surfaceFormat.format, &formatProperties);
+	if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) == 0) {
+		LOG("Blitting from optimal image is not supported");
+		blitSupport = false;
+	}
+	//check if the device support blitting to linear images
+	vkGetPhysicalDeviceFormatProperties(devices.physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProperties);
+	if ((formatProperties.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) == 0) {
+		LOG("Blitting to linear image is not supported");
+		blitSupport = false;
+	}
+
+	//handle the situation where blit is not supported
+	if (blitSupport == false) {
+		std::vector<VkFormat> BGRFormats = { VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM };
+		if (std::find(BGRFormats.begin(), BGRFormats.end(), swapchain.surfaceFormat.format) == BGRFormats.end()) {
+			//current swapchain image format is something complicated - just return
+			LOG("abort saveScreenshot() due to the current swapchain image format");
+			return;
+		}
+	}
+
+	//found number of image channels
+	int nbChannel = -1;
+	if (swapchain.surfaceFormat.format >= VK_FORMAT_R8G8B8A8_UNORM && swapchain.surfaceFormat.format <= VK_FORMAT_B8G8R8A8_SRGB) {
+		nbChannel = 4;
+	}
+	else if (swapchain.surfaceFormat.format >= VK_FORMAT_R8G8B8_UNORM && swapchain.surfaceFormat.format <= VK_FORMAT_B8G8R8_SRGB) {
+		nbChannel = 3;
+	}
+	else {
+		LOG("abort saveScreenshot() due to the current swapchain image format");
+		return;
+	}
+
+	//source image (latest swapchain image)
+	VkImage srcImage = swapchain.images[swapchain.latestImageIndex];
+
+	//create dst image
+	VkImage dstImage = VK_NULL_HANDLE;
+	MemoryAllocator::HostVisibleMemory imageMemory = devices.createImage(dstImage, { swapchain.extent.width, swapchain.extent.height, 1 },
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_TILING_LINEAR,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	VkCommandBuffer cmdBuf = devices.beginCommandBuffer();
+
+	//dst image layout transition (undefined -> transfer dst optimal)
+	vktools::insertImageMemoryBarrier(cmdBuf,
+		dstImage,
+		0,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	);
+
+	//src image layout transition (present source -> transfer src optimal)
+	vktools::insertImageMemoryBarrier(cmdBuf,
+		srcImage,
+		VK_ACCESS_MEMORY_READ_BIT, //wait until finishing presentation
+		VK_ACCESS_TRANSFER_READ_BIT, //so that transfer read can start
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	);
+
+	//blit (or copy) image from src to dst
+	if (blitSupport) {
+		VkOffset3D blitSize{};
+		blitSize.x = width;
+		blitSize.y = height;
+		blitSize.z = 1;
+		VkImageBlit imageBlitRegion{};
+		imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageBlitRegion.srcSubresource.layerCount = 1;
+		//imageBlitRegion.srcOffsets[0] -> [0, 0, 0]
+		imageBlitRegion.srcOffsets[1] = blitSize; // [width, height, 1]
+		imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageBlitRegion.dstSubresource.layerCount = 1;
+		//imageBlitRegion.srcOffsets[0] -> [0, 0, 0]
+		imageBlitRegion.dstOffsets[1] = blitSize; // [width, height, 1]
+
+		//blit
+		vkCmdBlitImage(cmdBuf,
+			srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &imageBlitRegion,
+			VK_FILTER_NEAREST
+		);
+	}
+	else {
+		VkImageCopy imageCopyRegion{};
+		imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageCopyRegion.srcSubresource.layerCount = 1;
+		imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageCopyRegion.dstSubresource.layerCount = 1;
+		imageCopyRegion.extent = { swapchain.extent.width, swapchain.extent.height, 1 };
+
+		//copy
+		vkCmdCopyImage(cmdBuf,
+			srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &imageCopyRegion
+		);
+	}
+
+	//dst image layout transition (transfer dst optimal -> general)
+	vktools::insertImageMemoryBarrier(cmdBuf,
+		dstImage,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_ACCESS_MEMORY_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_GENERAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	);
+
+	//revert src image layout (transfer src optimal -> present source)
+	vktools::insertImageMemoryBarrier(cmdBuf,
+		srcImage,
+		VK_ACCESS_TRANSFER_READ_BIT,
+		VK_ACCESS_MEMORY_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	);
+
+	devices.endCommandBuffer(cmdBuf);
+
+	//get image layout
+	VkImageSubresource subresource{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
+	VkSubresourceLayout subresourceLayout;
+	vkGetImageSubresourceLayout(devices.device, dstImage, &subresource, &subresourceLayout);
+
+	//map image memory
+	const uint8_t* data = reinterpret_cast<const uint8_t*>(imageMemory.getHandle(devices.device));
+	data += subresourceLayout.offset;
+
+	if (!blitSupport) {
+		//manually convert BGR(A) to RGB(A)
+		uint8_t* convertedPixels = new uint8_t[width * height * nbChannel];
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				int byteLocation = (y * width + x) * nbChannel;
+				if (nbChannel == 4) {
+					//uint8_t a = static_cast<uint8_t>(*(data + 3));
+					convertedPixels[byteLocation + 3] = 255; //A
+				}
+				convertedPixels[byteLocation + 2] = static_cast<uint8_t>(*data);			//B
+				convertedPixels[byteLocation + 1] = static_cast<uint8_t>(*(data + 1));	//G
+				convertedPixels[byteLocation] = static_cast<uint8_t>(*(data + 2));		//R
+				data += nbChannel;
+			}
+			//data += subresourceLayout.rowPitch;
+		}
+		stbi_write_png(filename.c_str(), width, height, nbChannel, convertedPixels, width * nbChannel);
+		delete[] convertedPixels;
+	}
+	else {
+		//write image to a png file
+		stbi_write_png(filename.c_str(), width, height, nbChannel, data, width * nbChannel);
+	}
+
+	//cleanup
+	imageMemory.unmap(devices.device);
+	devices.memoryAllocator.freeImageMemory(dstImage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	vkDestroyImage(devices.device, dstImage, nullptr);
+	LOG("save image file: " + filename);
 }

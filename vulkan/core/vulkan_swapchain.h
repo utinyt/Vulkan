@@ -25,6 +25,8 @@ public:
 	std::vector<VkImage> images;
 	/** swapchain image view collection */
 	std::vector<VkImageView> imageViews;
+	/** index of last swapchain image finished presenting */
+	uint32_t latestImageIndex = 0;
 
 private:
 	/** abstracted vulkan device collection handle */
