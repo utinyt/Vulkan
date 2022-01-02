@@ -20,7 +20,7 @@ struct VulkanDevice {
 		VkDeviceSize size) const;
 	/** @brief create image & image memory */
 	MemoryAllocator::HostVisibleMemory createImage(VkImage& image, VkExtent3D extent, VkFormat format,
-		VkImageTiling tiling, VkImageUsageFlags usage,
+		VkImageTiling tiling, VkImageUsageFlags usage, uint32_t mipLevels,
 		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT);
 	/** @brief copy data to an image */

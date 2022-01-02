@@ -36,6 +36,7 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 		imageCreateInfo.format,
 		imageCreateInfo.tiling,
 		imageCreateInfo.usage,
+		1,
 		memoryProperties,
 		imageCreateInfo.samples);
 
@@ -58,7 +59,7 @@ void Framebuffer::addAttachment(VkImageCreateInfo imageCreateInfo, VkMemoryPrope
 		attachment.image,
 		VK_IMAGE_VIEW_TYPE_2D,
 		imageCreateInfo.format,
-		imageAspect);
+		imageAspect, 1);
 
 	//fill attachment description
 	attachment.description.format			= imageCreateInfo.format;

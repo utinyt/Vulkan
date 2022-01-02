@@ -431,8 +431,9 @@ private:
 				vktools::initializers::imageCreateInfo(
 					{ swapchain.extent.width, swapchain.extent.height, 1 },
 					VK_FORMAT_R8_UNORM,
-					VK_IMAGE_TILING_OPTIMAL,
+					VK_IMAGE_TILING_OPTIMAL, 
 					VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+					1,
 					sampleCount);
 
 			ssaoFramebuffers[i].addAttachment(ssaoBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -541,7 +542,8 @@ private:
 				{ swapchain.extent.width, swapchain.extent.height, 1 },
 				VK_FORMAT_R16G16B16A16_SFLOAT,
 				VK_IMAGE_TILING_OPTIMAL,
-				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+				1,
 				sampleCount
 			);
 			//TODO: reconstruct position data from depth value

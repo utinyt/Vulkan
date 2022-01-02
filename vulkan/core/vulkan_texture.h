@@ -23,6 +23,8 @@ public:
 	VkImage image = VK_NULL_HANDLE;
 	/** image descriptor */
 	VkDescriptorImageInfo descriptor{};
+	/** mip levels */
+	uint32_t mipLevels = 1;
 };
 
 class Texture2D : public TextureBase {

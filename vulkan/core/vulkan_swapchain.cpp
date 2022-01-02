@@ -149,7 +149,7 @@ void VulkanSwapchain::create() {
 	imageViews.resize(imageCount);
 	for (uint32_t i = 0; i < imageCount; ++i) {
 		imageViews[i] = vktools::createImageView(devices->device, images[i],
-			VK_IMAGE_VIEW_TYPE_2D, surfaceFormat.format, VK_IMAGE_ASPECT_COLOR_BIT);
+			VK_IMAGE_VIEW_TYPE_2D, surfaceFormat.format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 	}
 
 	LOG("created:\timage views");

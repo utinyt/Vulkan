@@ -56,7 +56,7 @@ VulkanAppBase::~VulkanAppBase() {
 
 	devices.cleanup();
 	vkDestroySurfaceKHR(instance, surface, nullptr);
-	destroyDebugUtilsMessengerEXT(instance, nullptr);
+	vkdebug::messenger::destroyDebugUtilsMessengerEXT(instance, nullptr);
 	vkDestroyInstance(instance, nullptr);
 
 	glfwDestroyWindow(window);
@@ -116,8 +116,8 @@ void VulkanAppBase::initVulkan() {
 	//debug messenger
 	if (enableValidationLayer) {
 		VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-		setupDebugMessengerCreateInfo(debugCreateInfo);
-		VK_CHECK_RESULT(createDebugUtilsMessengerEXT(instance, &debugCreateInfo, nullptr));
+		vkdebug::messenger::setupDebugMessengerCreateInfo(debugCreateInfo);
+		VK_CHECK_RESULT(vkdebug::messenger::createDebugUtilsMessengerEXT(instance, &debugCreateInfo, nullptr));
 		LOG("created:\tdebug utils messenger");
 	}
 
@@ -129,6 +129,7 @@ void VulkanAppBase::initVulkan() {
 	devices.pickPhysicalDevice(instance, surface, enabledDeviceExtensions);
 	devices.createLogicalDevice();
 	devices.createCommandPool();
+	vkdebug::marker::init(devices.device);
 
 	swapchain.init(&devices, window);
 	swapchain.create();
@@ -412,7 +413,7 @@ void VulkanAppBase::createInstance() {
 		else {
 			enabledLayerCount++;
 			enabledLayerNames.push_back(requiredValidationLayer);
-			setupDebugMessengerCreateInfo(debugCreateInfo);
+			vkdebug::messenger::setupDebugMessengerCreateInfo(debugCreateInfo);
 			instanceInfo.pNext = &debugCreateInfo;
 		}
 	}
@@ -444,9 +445,8 @@ void VulkanAppBase::createInstance() {
 	// -- required extensions specified by user --
 	requiredInstanceExtensions.insert(requiredInstanceExtensions.end(),
 		enabledInstanceExtensions.begin(), enabledInstanceExtensions.end());
-	if (enableValidationLayer) {
-		requiredInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-	}
+	//debug utils also can be used in release mode - perf makers
+	requiredInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
 	uint32_t availableInstanceExtensionCount = 0;
 	vkEnumerateInstanceExtensionProperties(nullptr, &availableInstanceExtensionCount, nullptr);
@@ -461,6 +461,10 @@ void VulkanAppBase::createInstance() {
 			});
 
 		if (extensionIt == availableInstanceExtensions.end()) {
+			if (strcmp(extensionIt->extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) {
+				LOG("debug utils are not supported - continue without perf markers");
+				continue;
+			}
 			throw std::runtime_error(std::string(requiredEXT)+" instance extension is not supported");
 		}
 	}
@@ -545,7 +549,7 @@ void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 	devices.createImage(depthImage, { swapchain.extent.width,swapchain.extent.height, 1 },
 		depthFormat,
 		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 1,
 		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		sampleCount
 	);
@@ -559,7 +563,7 @@ void VulkanAppBase::createDepthStencilImage(VkSampleCountFlagBits sampleCount) {
 	}
 
 	depthImageView = vktools::createImageView(devices.device, depthImage,
-		VK_IMAGE_VIEW_TYPE_2D, depthFormat, aspectMask);
+		VK_IMAGE_VIEW_TYPE_2D, depthFormat, aspectMask, 1);
 
 	VkCommandBuffer cmdBuf = devices.beginCommandBuffer();
 	vktools::setImageLayout(cmdBuf, depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -592,7 +596,7 @@ void VulkanAppBase::createMultisampleColorBuffer(VkSampleCountFlagBits sampleCou
 		{ swapchain.extent.width,swapchain.extent.height, 1 },
 		swapchain.surfaceFormat.format,
 		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 1, 
 		devices.lazilyAllocatedMemoryTypeExist ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		sampleCount
 	);
@@ -601,7 +605,8 @@ void VulkanAppBase::createMultisampleColorBuffer(VkSampleCountFlagBits sampleCou
 		multisampleColorImage,
 		VK_IMAGE_VIEW_TYPE_2D,
 		swapchain.surfaceFormat.format,
-		VK_IMAGE_ASPECT_COLOR_BIT
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		1
 	);
 }
 
@@ -671,6 +676,7 @@ void VulkanAppBase::saveScreenshot(const std::string& filename) {
 		VK_FORMAT_R8G8B8A8_UNORM,
 		VK_IMAGE_TILING_LINEAR,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		1,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 

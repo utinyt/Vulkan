@@ -11,6 +11,7 @@
 #include "core/vulkan_texture.h"
 #include "core/vulkan_pipeline.h"
 #include "core/vulkan_framebuffer.h"
+#include "core/vulkan_debug.h"
 
 namespace {
 	std::random_device device;
@@ -534,7 +535,8 @@ private:
 				vktools::initializers::imageCreateInfo({ swapchain.extent.width, swapchain.extent.height, 1 },
 					VK_FORMAT_R16G16B16A16_SFLOAT,
 					VK_IMAGE_TILING_OPTIMAL,
-					VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+					VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+					1
 				);
 
 			//hdr image
@@ -1007,8 +1009,9 @@ private:
 
 			const size_t resourceIndex = i / framebuffers.size();
 			/*
-			* hdr pass
+			* draw particles
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "draw particles");
 			hdrRenderPassBeginInfo.framebuffer = hdrFramebuffers[resourceIndex].framebuffer;
 			vkCmdBeginRenderPass(commandBuffers[i], &hdrRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
@@ -1022,11 +1025,13 @@ private:
 
 			vkCmdDraw(commandBuffers[i], particleNum, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			//TODO: merge this pass to the previous renderpass (subpass)
 			/*
 			* extract bright color
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "extract bright pixels");
 			brightRenderPassBeginInfo.framebuffer = brightFramebuffers[resourceIndex].framebuffer;
 			vkCmdBeginRenderPass(commandBuffers[i], &brightRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
@@ -1037,10 +1042,12 @@ private:
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			/*
 			* bloom pass vert
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "bloom vertical pass");
 			bloomVertRenderPassBeginInfo.framebuffer = bloomFramebufferVerts[resourceIndex].framebuffer;
 			vkCmdBeginRenderPass(commandBuffers[i], &bloomVertRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
@@ -1051,10 +1058,12 @@ private:
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			/*
 			* bloom pass horz
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "bloom horizontal pass");
 			bloomHorzRenderPassBeginInfo.framebuffer = bloomFramebufferHorzs[resourceIndex].framebuffer;
 			vkCmdBeginRenderPass(commandBuffers[i], &bloomHorzRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vktools::setViewportScissorDynamicStates(commandBuffers[i], swapchain.extent);
@@ -1065,10 +1074,12 @@ private:
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[i]);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			/*
 			* final pass - full screen quad
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "tone mapping");
 			size_t framebufferIndex = i % framebuffers.size();
 			renderPassBeginInfo.framebuffer = framebuffers[framebufferIndex];
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -1081,13 +1092,16 @@ private:
 				&descriptorSets[resourceIndex], 0, nullptr);
 
 			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			/*
 			* imgui
 			*/
+			vkdebug::marker::beginLabel(commandBuffers[i], "imgui");
 			imguiBase->drawFrame(commandBuffers[i], resourceIndex);
 
 			vkCmdEndRenderPass(commandBuffers[i]);
+			vkdebug::marker::endLabel(commandBuffers[i]);
 
 			//release buffer ownership
 			if (separateComputeQueue) {
@@ -1170,11 +1184,13 @@ private:
 			}
 
 			//first pass - compute particle gravity
+			vkdebug::marker::beginLabel(computeCommandBuffers[i], "compute gravity");
 			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineCompute);
 			vkCmdBindDescriptorSets(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout,
 				0, 1, &computeDescriptorSets, 0, 0);
 			uint32_t localGroupSize = 256;
 			vkCmdDispatch(computeCommandBuffers[i], particleNum / localGroupSize, 1, 1); //local_group_x = 256
+			vkdebug::marker::endLabel(computeCommandBuffers[i]);
 
 			//memory barrier
 			VkBufferMemoryBarrier bufferBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
@@ -1194,8 +1210,10 @@ private:
 				0, nullptr);
 
 			//second pass - update particle position
+			vkdebug::marker::beginLabel(computeCommandBuffers[i], "compute position");
 			vkCmdBindPipeline(computeCommandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineUpdate);
 			vkCmdDispatch(computeCommandBuffers[i], particleNum / localGroupSize, 1, 1);
+			vkdebug::marker::endLabel(computeCommandBuffers[i]);
 
 			//release buffer ownership
 			if (separateComputeQueue) {

@@ -1,3 +1,4 @@
+#include <string>
 #include "vulkan_utils.h"
 
 namespace vktools {
@@ -47,10 +48,11 @@ namespace vktools {
 	* @param image - image to transit layout
 	* @param oldLayout
 	* @param newLayout
+	* @param mipLevels
 	* @param aspect
 	*/
 	void setImageLayout(VkCommandBuffer commandBuffer, VkImage image,
-		VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange subresourceRange) {
+		VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		VkImageMemoryBarrier imageBarrier{};
 		imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		imageBarrier.oldLayout = oldLayout;
@@ -58,7 +60,7 @@ namespace vktools {
 		imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		imageBarrier.image = image;
-		imageBarrier.subresourceRange = subresourceRange;
+		imageBarrier.subresourceRange = range;
 
 		VkPipelineStageFlags srcStage;
 		VkPipelineStageFlags dstStage;
@@ -109,6 +111,134 @@ namespace vktools {
 			0, nullptr,
 			1, &imageBarrier);
 	}
+	
+	/*
+	* generate mipmaps
+	*
+	* @param cmdBuf - command buffer to record
+	* @param physicalDevice - physical device to check vkCmdBlitImage support
+	* @param image - image handle to create mipmaps
+	* @param texWidth - width of current image
+	* @param texHeight - height of current image
+	* @param mipLevels - number of mipmaps to generate
+	* @param filter - texture filter used to downsampling
+	*/
+	void generateMipmaps(VkCommandBuffer cmdBuf,
+		VkPhysicalDevice physicalDevice,
+		VkImage image,
+		VkFormat format,
+		int32_t texWidth,
+		int32_t texHeight,
+		uint32_t mipLevels,
+		VkFilter filter) {
+		/*
+		* check if vkCmdBlitImage is supported
+		*/
+		VkFormatProperties properties{};
+		vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
+		if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0) {
+			std::string str = "generateMipmaps() : texture format " +
+				std::to_string(format) +
+				" does not support linear blitting";
+			throw std::runtime_error(str);
+		}
+
+		VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+		barrier.image = image;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.subresourceRange.levelCount = 1;
+
+		int32_t mipWidth = texWidth;
+		int32_t mipHeight = texHeight;
+
+		for (uint32_t i = 1; i < mipLevels; ++i) {
+			/*
+			* image transition (transfer dst optimal -> transfer src optimal)
+			* wait on privious command (vkCmdCopyBufferToImage or vkCmdBlitImage)
+			*/
+			barrier.subresourceRange.baseMipLevel = i - 1;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			vkCmdPipelineBarrier(cmdBuf,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				0,
+				0, nullptr,
+				0, nullptr,
+				1, &barrier);
+
+			/*
+			* blit
+			*/
+			VkImageBlit blit{};
+			blit.srcOffsets[0] = { 0, 0, 0 };					//image extent from here
+			blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };	//to here
+			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.srcSubresource.mipLevel = i - 1;
+			blit.srcSubresource.baseArrayLayer = 0;
+			blit.srcSubresource.layerCount = 1;
+			blit.dstOffsets[0] = { 0, 0, 0 };
+			blit.dstOffsets[1] = {
+				mipWidth > 1 ? mipWidth / 2 : 1,
+				mipHeight > 1 ? mipHeight / 2 : 1,
+				1
+			};
+			blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.dstSubresource.mipLevel = i;
+			blit.dstSubresource.baseArrayLayer = 0;
+			blit.dstSubresource.layerCount = 1;
+			vkCmdBlitImage(cmdBuf,
+				image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1, &blit,
+				filter);
+
+			/*
+			* image transition (transfer src optimal -> shader read only optimal)
+			* wait on blit command to finish
+			*/
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			vkCmdPipelineBarrier(cmdBuf,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				0,
+				0, nullptr,
+				0, nullptr,
+				1, &barrier);
+
+			//for next mipmap
+			if (mipWidth > 1) {
+				mipWidth /= 2;
+			}
+			if (mipHeight > 1) {
+				mipHeight /= 2;
+			}
+		}
+
+		/*
+		* image transition (transfer src optimal -> shader read only optimal) for the last mip level
+		*/
+		barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(cmdBuf,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+	}
 
 	/*
 	* set pipeline barrier for image layout transition
@@ -156,9 +286,9 @@ namespace vktools {
 	* @return VkImageView - created image view
 	*/
 	VkImageView createImageView(VkDevice device, VkImage image, VkImageViewType viewType,
-		VkFormat format, VkImageAspectFlags aspectFlags) {
+		VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels) {
 		VkImageViewCreateInfo viewInfo = initializers::imageViewCreateInfo(image,
-			viewType, format, { aspectFlags, 0, 1, 0, 1 });
+			viewType, format, { aspectFlags, 0, mipLevels, 0, 1 });
 		VkImageView imageView;
 		VK_CHECK_RESULT(vkCreateImageView(device, &viewInfo, nullptr, &imageView));
 		return imageView;

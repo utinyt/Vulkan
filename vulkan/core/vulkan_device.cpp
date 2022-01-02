@@ -329,11 +329,12 @@ MemoryAllocator::HostVisibleMemory VulkanDevice::createImage(VkImage& image,
 	VkFormat format,
 	VkImageTiling tiling,
 	VkImageUsageFlags usage,
+	uint32_t mipLevels,
 	VkMemoryPropertyFlags properties,
 	VkSampleCountFlagBits numSamples) {
 	//image creation
 	VkImageCreateInfo imageInfo = 
-		vktools::initializers::imageCreateInfo(extent, format, tiling, usage, numSamples);
+		vktools::initializers::imageCreateInfo(extent, format, tiling, usage, mipLevels, numSamples);
 	VK_CHECK_RESULT(vkCreateImage(device, &imageInfo, nullptr, &image));
 	return memoryAllocator.allocateImageMemory(image, properties);
 }
